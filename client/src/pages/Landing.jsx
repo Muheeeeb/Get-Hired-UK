@@ -34,10 +34,6 @@ function usePortalStatus() {
   return online;
 }
 
-const acceptingStamp = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Europe/London', month: 'long', year: 'numeric',
-}).format(new Date());
-
 /* ---------------- motion ---------------- */
 
 function Reveal({ children, delay = 0, className = '' }) {
@@ -356,14 +352,8 @@ export default function Landing() {
 
         <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-14 lg:grid-cols-2 lg:gap-10 lg:px-8 lg:pb-28 lg:pt-20">
           <div>
-            <Reveal>
-              <span className="inline-flex items-center gap-2 rounded-full border border-gold-500/40 bg-gold-100/70 px-4 py-1.5 text-[12px] font-semibold text-navy-800">
-                <span className="h-1.5 w-1.5 rounded-full bg-gold-600" aria-hidden="true" />
-                Now accepting clients — {acceptingStamp}
-              </span>
-            </Reveal>
             <Reveal delay={80}>
-              <h1 className="mt-6 font-display text-[2.7rem] leading-[1.08] tracking-tight text-navy-800 sm:text-6xl">
+              <h1 className="font-display text-[2.7rem] leading-[1.08] tracking-tight text-navy-800 sm:text-6xl">
                 We apply.
                 <br />You interview.
                 <br /><span className="relative inline-block text-gold-600">
