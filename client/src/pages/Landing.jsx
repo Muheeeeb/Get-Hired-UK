@@ -230,19 +230,11 @@ function ConsultationModal({ open, interest, onClose }) {
 function LogoMark({ size = 42, className = '' }) {
   return (
     <span
-      className={`inline-block shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-navy-800/10 ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-navy-800/10 ${className}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <span
-        className="block h-full w-full"
-        style={{
-          backgroundImage: 'url(/logo.jpeg)',
-          backgroundSize: '235%',
-          backgroundPosition: '50% 30%',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
+      <img src="/logo-mark.png" alt="" className="h-full w-full object-contain p-[3px]" />
     </span>
   );
 }

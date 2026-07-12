@@ -35,16 +35,8 @@ export default function Login() {
         <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" aria-hidden="true" />
         <div className="absolute -bottom-40 -left-20 h-96 w-96 rounded-full bg-navy-600/30 blur-3xl" aria-hidden="true" />
         <Link to="/" className="relative flex items-center gap-3" aria-label="Back to the Get Hired UK homepage">
-          <span className="block h-12 w-12 overflow-hidden rounded-xl bg-white ring-1 ring-white/20">
-            <span
-              className="block h-full w-full"
-              style={{
-                backgroundImage: 'url(/logo.jpeg)',
-                backgroundSize: '235%',
-                backgroundPosition: '50% 30%',
-                backgroundRepeat: 'no-repeat',
-              }}
-            />
+          <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-white/20">
+            <img src="/logo-mark.png" alt="" className="h-full w-full object-contain p-[3px]" />
           </span>
           <div>
             <div className="font-display text-xl text-ivory">Get Hired UK</div>

@@ -23,16 +23,12 @@ const NAV = {
 
 function LogoChip({ size = 40 }) {
   return (
-    <span className="block shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-white/20" style={{ width: size, height: size }} aria-hidden="true">
-      <span
-        className="block h-full w-full"
-        style={{
-          backgroundImage: 'url(/logo.jpeg)',
-          backgroundSize: '235%',
-          backgroundPosition: '50% 30%',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
+    <span
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-white/20"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <img src="/logo-mark.png" alt="" className="h-full w-full object-contain p-[3px]" />
     </span>
   );
 }
