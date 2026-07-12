@@ -225,6 +225,28 @@ function ConsultationModal({ open, interest, onClose }) {
   );
 }
 
+/* ---------------- brand mark (crops the GH monogram from the logo) ---------------- */
+
+function LogoMark({ size = 42, className = '' }) {
+  return (
+    <span
+      className={`inline-block shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-navy-800/10 ${className}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <span
+        className="block h-full w-full"
+        style={{
+          backgroundImage: 'url(/logo.jpeg)',
+          backgroundSize: '235%',
+          backgroundPosition: '50% 30%',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+    </span>
+  );
+}
+
 /* ---------------- decorative dots ---------------- */
 
 function Dots({ className = '' }) {
@@ -264,7 +286,6 @@ export default function Landing() {
 
   const links = [
     ['#how', 'How it works'],
-    ['#portal', 'The portal'],
     ['#package', "What's included"],
     ['#pricing', 'Packages'],
     ['#faq', 'FAQ'],
@@ -276,10 +297,10 @@ export default function Landing() {
       <header className={`sticky top-0 z-50 bg-ivory/95 backdrop-blur transition-shadow ${scrolled ? 'shadow-[0_1px_0_rgba(10,31,68,0.08),0_8px_24px_-16px_rgba(10,31,68,0.25)]' : ''}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-5 py-3.5 lg:px-8">
           <a href="#top" className="flex items-center gap-2.5">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy-800 font-display text-lg font-bold text-gold-300 shadow-sm">G</span>
+            <LogoMark size={42} />
             <span className="leading-tight">
               <span className="block font-display text-[17px] font-semibold text-navy-800">Get Hired UK</span>
-              <span className="block text-[9.5px] font-semibold uppercase tracking-[0.22em] text-gold-600">Career search, handled</span>
+              <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-gold-600">Your career · Our mission · Your success</span>
             </span>
           </a>
           <nav className="hidden items-center gap-7 xl:flex" aria-label="Primary">
@@ -290,8 +311,8 @@ export default function Landing() {
             ))}
           </nav>
           <div className="hidden items-center gap-3 lg:flex">
-            <Link to={portalTo} className="rounded-full border border-navy-800/20 px-4.5 px-5 py-2.5 text-[13.5px] font-semibold text-navy-800 transition hover:border-navy-800/50">
-              {user ? 'My dashboard' : 'Client sign in'}
+            <Link to={portalTo} className="rounded-full border border-navy-800/20 px-5 py-2.5 text-[13.5px] font-semibold text-navy-800 transition hover:border-navy-800/50">
+              Client Portal
             </Link>
             <button onClick={() => openConsult()}
               className="rounded-full bg-gold-500 px-5 py-2.5 text-[13.5px] font-semibold text-navy-900 shadow-[0_4px_14px_-4px_rgba(201,162,39,0.5)] transition hover:bg-gold-400">
@@ -308,7 +329,10 @@ export default function Landing() {
       {menuOpen && (
         <div className="fixed inset-0 z-[60] flex flex-col bg-navy-950 px-6 py-5 lg:hidden">
           <div className="flex items-center justify-between">
-            <span className="font-display text-xl text-ivory">Get Hired <span className="text-gold-300">UK</span></span>
+            <span className="flex items-center gap-2.5">
+              <LogoMark size={38} />
+              <span className="font-display text-xl text-ivory">Get Hired <span className="text-gold-300">UK</span></span>
+            </span>
             <button onClick={() => setMenuOpen(false)} aria-label="Close menu" className="rounded-lg p-2 text-ivory">
               <I size={22} d={<path d="M6 6l12 12M18 6L6 18" />} />
             </button>
@@ -320,7 +344,7 @@ export default function Landing() {
               </a>
             ))}
             <Link to={portalTo} className="font-display text-[1.9rem] text-gold-300">
-              {user ? 'My dashboard' : 'Client sign in'}
+              Client Portal
             </Link>
           </nav>
           <button onClick={() => openConsult()}
@@ -371,8 +395,8 @@ export default function Landing() {
                 Book a free consultation
                 <I d={ic.arrow} size={17} className="transition-transform group-hover:translate-x-1" />
               </button>
-              <a href="#portal" className="inline-flex items-center gap-2 rounded-full border border-navy-800/20 px-6 py-4 text-[15px] font-semibold text-navy-800 transition hover:border-gold-500 hover:text-gold-600">
-                See the portal
+              <a href="#how" className="inline-flex items-center gap-2 rounded-full border border-navy-800/20 px-6 py-4 text-[15px] font-semibold text-navy-800 transition hover:border-gold-500 hover:text-gold-600">
+                See how it works
               </a>
             </Reveal>
             <Reveal delay={320}>
@@ -482,77 +506,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ================= PORTAL SHOWCASE ================= */}
-      <section id="portal" className="relative scroll-mt-24 overflow-hidden bg-navy-950">
-        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <div className="absolute -left-32 top-[-25%] h-[30rem] w-[30rem] rounded-full bg-gold-500/[0.07] blur-3xl" />
-          <div className="absolute bottom-[-30%] right-[-10%] h-[28rem] w-[28rem] rounded-full bg-navy-600/30 blur-3xl" />
-        </div>
-        <Dots className="left-8 bottom-10 hidden h-32 w-32 opacity-40 lg:block" />
-
-        <div className="relative mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-28">
-          <div className="grid items-center gap-14 lg:grid-cols-12">
-            <div className="lg:col-span-5">
-              <Reveal>
-                <p className="text-[12px] font-bold uppercase tracking-[0.24em] text-gold-300">Introducing your client portal</p>
-                <h2 className="mt-3 font-display text-3xl tracking-tight text-ivory sm:text-[2.6rem] sm:leading-[1.15]">
-                  Track. Review. <span className="text-gold-300">Relax.</span>
-                </h2>
-                <p className="mt-5 max-w-md text-[15.5px] leading-[1.8] text-ivory/60">
-                  Other services send a monthly summary and ask for your trust. We built a
-                  portal instead — the work is visible the day it happens, or it didn't happen.
-                </p>
-              </Reveal>
-              <div className="mt-8 space-y-3">
-                {[
-                  [ic.ring, 'Momentum meter', 'this month against your target, live'],
-                  [ic.ledger, 'Application ledger', 'employer, role, date and a link — every one'],
-                  [ic.folder, 'Master documents', 'your approved CVs and letters, one tap away'],
-                  [ic.mail, 'Daily Pulse email', '“We applied to N roles for you today” — 19:00'],
-                  [ic.academy, 'Interview prep hub', 'guides and coaching notes, always stocked'],
-                ].map(([d, title, sub], i) => (
-                  <Reveal key={title} delay={i * 70}>
-                    <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/[0.04] px-4.5 px-5 py-3.5 transition-colors hover:border-gold-500/40">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gold-500/15 text-gold-300">
-                        <I d={d} size={18} />
-                      </span>
-                      <div>
-                        <p className="text-[14.5px] font-semibold text-ivory">{title}</p>
-                        <p className="text-[12.5px] text-ivory/50">{sub}</p>
-                      </div>
-                    </div>
-                  </Reveal>
-                ))}
-              </div>
-            </div>
-
-            <Reveal delay={150} className="lg:col-span-7">
-              <div className="relative">
-                <div className="overflow-hidden rounded-2xl border border-white/15 shadow-[0_40px_80px_-24px_rgba(0,0,0,0.7)]">
-                  <div className="flex items-center gap-2 border-b border-white/10 bg-navy-900 px-4 py-2.5">
-                    <span className="flex gap-1.5" aria-hidden="true">
-                      <i className="h-2.5 w-2.5 rounded-full bg-white/15" />
-                      <i className="h-2.5 w-2.5 rounded-full bg-white/15" />
-                      <i className="h-2.5 w-2.5 rounded-full bg-white/15" />
-                    </span>
-                    <span className="mx-auto rounded-md bg-white/5 px-4 py-1 text-[11px] text-ivory/40">
-                      portal.gethired.uk — your application ledger
-                    </span>
-                  </div>
-                  <img
-                    src="/marketing/joblist-desktop.png"
-                    alt="The portal's application ledger listing tailored applications with company, role, date and link"
-                    className="block w-full"
-                    loading="lazy"
-                  />
-                </div>
-                <p className="mt-4 text-right text-[11px] text-ivory/35">Actual portal · shown with sample data</p>
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
       {/* ================= THE COMPLETE PACKAGE ================= */}
       <section id="package" className="scroll-mt-24">
         <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-28">
@@ -650,19 +603,20 @@ export default function Landing() {
             <Reveal>
               <p className="text-[12px] font-bold uppercase tracking-[0.24em] text-gold-600">Packages</p>
               <h2 className="mt-3 font-display text-3xl tracking-tight text-navy-800 sm:text-[2.4rem]">
-                Two paces. One standard.
+                Three packages. One standard.
               </h2>
               <p className="mt-4 text-[15px] leading-[1.8] text-ink-soft">
-                Fees depend on seniority and market, and are agreed plainly at your
-                consultation — no surprises afterwards.
+                Pricing is shared during your consultation — shaped to your seniority and
+                your market, and agreed plainly before anything begins.
               </p>
             </Reveal>
           </div>
 
-          <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
+          <div className="mx-auto mt-12 grid max-w-6xl gap-6 md:grid-cols-3">
             {[
+              { name: 'Silver', jobs: 20, tag: 'A steady start', dark: false },
               { name: 'Gold', jobs: 30, tag: 'Focused momentum', dark: false },
-              { name: 'Platinum', jobs: 40, tag: 'Our full weight behind you', dark: true },
+              { name: 'Platinum', jobs: 40, tag: 'Our full weight', dark: true },
             ].map((p, i) => (
               <Reveal key={p.name} delay={i * 110}>
                 <div className={`relative flex h-full flex-col rounded-3xl p-8 sm:p-9 ${
@@ -779,7 +733,7 @@ export default function Landing() {
               </button>
               <Link to={portalTo}
                 className="inline-flex items-center rounded-full border border-white/25 px-8 py-4 text-[15px] font-semibold text-ivory transition hover:border-gold-300/70 hover:text-gold-300">
-                {user ? 'Open my dashboard' : 'Client sign in'}
+                Client Portal
               </Link>
             </div>
             <p className="mt-7 text-[12.5px] text-ivory/35">hello@gethired.uk · replies within one working day</p>
@@ -793,7 +747,7 @@ export default function Landing() {
           <div className="grid gap-10 md:grid-cols-12">
             <div className="md:col-span-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-500 font-display font-bold text-navy-900">G</span>
+                <LogoMark size={38} />
                 <span className="font-display text-lg text-ivory">Get Hired UK</span>
               </div>
               <p className="mt-4 max-w-xs text-[13.5px] leading-relaxed text-ivory/45">
@@ -817,7 +771,7 @@ export default function Landing() {
                     Book a consultation
                   </button>
                 </li>
-                <li><Link to="/login" className="transition hover:text-gold-300">Client sign in</Link></li>
+                <li><Link to="/login" className="transition hover:text-gold-300">Client Portal</Link></li>
                 <li><a href="mailto:hello@gethired.uk" className="transition hover:text-gold-300">hello@gethired.uk</a></li>
               </ul>
             </div>

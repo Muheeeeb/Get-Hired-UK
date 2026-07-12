@@ -21,12 +21,26 @@ const NAV = {
   ],
 };
 
+function LogoChip({ size = 40 }) {
+  return (
+    <span className="block shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-white/20" style={{ width: size, height: size }} aria-hidden="true">
+      <span
+        className="block h-full w-full"
+        style={{
+          backgroundImage: 'url(/logo.jpeg)',
+          backgroundSize: '235%',
+          backgroundPosition: '50% 30%',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+    </span>
+  );
+}
+
 function Brand() {
   return (
     <div className="flex items-center gap-3 px-5 py-6">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold-500 font-display text-xl font-bold text-navy-900">
-        G
-      </div>
+      <LogoChip size={40} />
       <div>
         <div className="font-display text-ivory text-base leading-tight">Get Hired UK</div>
         <div className="text-[10px] tracking-[0.2em] uppercase text-gold-300/80">Operations Portal</div>
@@ -104,9 +118,7 @@ export function AppShell({ children, alertMode = false }) {
       {/* Mobile top bar */}
       <header className="sticky top-0 z-40 flex items-center justify-between bg-navy-900 px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold-500 font-display font-bold text-navy-900">
-            G
-          </div>
+          <LogoChip size={32} />
           <span className="font-display text-ivory">Get Hired UK</span>
         </div>
         <button

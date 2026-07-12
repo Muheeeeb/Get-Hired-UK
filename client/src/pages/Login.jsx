@@ -35,7 +35,17 @@ export default function Login() {
         <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" aria-hidden="true" />
         <div className="absolute -bottom-40 -left-20 h-96 w-96 rounded-full bg-navy-600/30 blur-3xl" aria-hidden="true" />
         <Link to="/" className="relative flex items-center gap-3" aria-label="Back to the Get Hired UK homepage">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gold-500 font-display text-2xl font-bold text-navy-900">G</div>
+          <span className="block h-12 w-12 overflow-hidden rounded-xl bg-white ring-1 ring-white/20">
+            <span
+              className="block h-full w-full"
+              style={{
+                backgroundImage: 'url(/logo.jpeg)',
+                backgroundSize: '235%',
+                backgroundPosition: '50% 30%',
+                backgroundRepeat: 'no-repeat',
+              }}
+            />
+          </span>
           <div>
             <div className="font-display text-xl text-ivory">Get Hired UK</div>
             <div className="text-[11px] tracking-[0.25em] uppercase text-gold-300/80">Operations Portal</div>
