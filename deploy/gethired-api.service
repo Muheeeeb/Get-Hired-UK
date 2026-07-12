@@ -1,0 +1,34 @@
+# systemd unit for the Get Hired UK API.
+# Install:  sudo cp deploy/gethired-api.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now gethired-api
+# Logs:     sudo journalctl -u gethired-api -f
+
+[Unit]
+Description=Get Hired UK API (Express + Prisma)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gethired
+WorkingDirectory=/srv/gethired/server
+EnvironmentFile=/srv/gethired/server/.env
+ExecStart=/usr/bin/node src/index.js
+
+# Keep it alive — this process also runs the nightly Daily Pulse cron.
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/gethired/server
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gethired-api
+
+[Install]
+WantedBy=multi-user.target
