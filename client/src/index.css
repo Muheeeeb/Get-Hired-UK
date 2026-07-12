@@ -1,0 +1,140 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-navy-950: #050f26;
+  --color-navy-900: #071634;
+  --color-navy-800: #0a1f44;
+  --color-navy-700: #12305e;
+  --color-navy-600: #1b4079;
+  --color-navy-100: #dbe3f0;
+
+  --color-gold-600: #a8861d;
+  --color-gold-500: #c9a227;
+  --color-gold-400: #d4b13a;
+  --color-gold-300: #e4c55a;
+  --color-gold-100: #f5ecce;
+
+  --color-ivory: #f7f6f2;
+  --color-ivory-dark: #efede6;
+  --color-ink: #111827;
+  --color-ink-soft: #4b5563;
+
+  --color-success: #1e9e5a;
+  --color-success-soft: #e3f3ea;
+  --color-alert: #e8791e;
+  --color-alert-soft: #fdeede;
+  --color-danger: #c43d3d;
+  --color-danger-soft: #f9e5e5;
+
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  --shadow-card: 0 1px 2px rgb(10 31 68 / 0.04), 0 8px 24px -8px rgb(10 31 68 / 0.12);
+  --shadow-card-lg: 0 2px 4px rgb(10 31 68 / 0.06), 0 16px 40px -12px rgb(10 31 68 / 0.18);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-ivory);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Micro-animations */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: fadeSlideUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-rise-1 { animation-delay: 0.05s; }
+.animate-rise-2 { animation-delay: 0.12s; }
+.animate-rise-3 { animation-delay: 0.19s; }
+.animate-rise-4 { animation-delay: 0.26s; }
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, #ece9e0 25%, #f4f2ec 50%, #ece9e0 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+/* Momentum meter ring fill animation */
+@keyframes ringFill {
+  from { stroke-dashoffset: var(--ring-circumference); }
+}
+.ring-animated {
+  animation: ringFill 1.2s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.label-caps {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Focus visibility for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--color-gold-500);
+  outline-offset: 2px;
+}
+
+/* ---------- landing page motion system ---------- */
+
+html {
+  scroll-behavior: smooth;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes marqueeX {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee-track {
+  animation: marqueeX 38s linear infinite;
+}
+.marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.float-slow { animation: floatY 7s ease-in-out infinite; }
+.float-slower { animation: floatY 9s ease-in-out 1.2s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .marquee-track, .float-slow, .float-slower, .ring-animated { animation: none; }
+}

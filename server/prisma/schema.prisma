@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  employee
+  client
+}
+
+enum LinkedinStatus {
+  not_started
+  in_progress
+  complete
+}
+
+enum MasterDocType {
+  master_cv
+  master_cover_letter
+}
+
+enum TailoredDocType {
+  tailored_cv
+  tailored_cover_letter
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  fullName     String    @map("full_name")
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         Role
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  clientProfile      ClientProfile?      @relation("ClientUser")
+  assignedClients    ClientProfile[]     @relation("AssignedEmployee")
+  jobApplications    JobApplication[]    @relation("EmployeeJobs")
+  masterUploads      MasterDocument[]    @relation("MasterUploader")
+  tailoredUploads    TailoredDocument[]  @relation("TailoredUploader")
+  interviewResources InterviewResource[] @relation("ResourceCreator")
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordResetToken[]
+
+  @@map("users")
+}
+
+model ClientProfile {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @unique @map("user_id") @db.Uuid
+  assignedEmployeeId String?        @map("assigned_employee_id") @db.Uuid
+  packageType        String         @map("package_type")
+  packageStartedAt   DateTime       @default(now()) @map("package_started_at")
+  expiryDate         DateTime       @map("expiry_date") @db.Date
+  linkedinStatus     LinkedinStatus @default(not_started) @map("linkedin_status")
+  monthlyJobTarget   Int            @default(40) @map("monthly_job_target")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  user             User             @relation("ClientUser", fields: [userId], references: [id])
+  assignedEmployee User?            @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
+  domains          Domain[]
+  jobApplications  JobApplication[]
+  dailyPulseLogs   DailyPulseLog[]
+
+  @@map("client_profiles")
+}
+
+model Domain {
+  id        String   @id @default(uuid()) @db.Uuid
+  clientId  String   @map("client_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  client          ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  masterDocuments MasterDocument[]
+
+  @@map("domains")
+}
+
+model MasterDocument {
+  id           String        @id @default(uuid()) @db.Uuid
+  domainId     String        @map("domain_id") @db.Uuid
+  type         MasterDocType
+  fileKey      String        @map("file_key")
+  fileName     String        @map("file_name")
+  uploadedById String        @map("uploaded_by") @db.Uuid
+  uploadedAt   DateTime      @default(now()) @map("uploaded_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  domain     Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation("MasterUploader", fields: [uploadedById], references: [id])
+
+  @@unique([domainId, type])
+  @@map("master_documents")
+}
+
+model JobApplication {
+  id              String   @id @default(uuid()) @db.Uuid
+  clientId        String   @map("client_id") @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  jobTitle        String   @map("job_title")
+  company         String
+  applicationDate DateTime @map("application_date") @db.Date
+  jobUrl          String   @map("job_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  client            ClientProfile      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  employee          User               @relation("EmployeeJobs", fields: [employeeId], references: [id])
+  tailoredDocuments TailoredDocument[]
+
+  @@index([clientId, applicationDate])
+  @@index([employeeId, applicationDate])
+  @@map("job_applications")
+}
+
+model TailoredDocument {
+  id               String          @id @default(uuid()) @db.Uuid
+  jobApplicationId String          @map("job_application_id") @db.Uuid
+  type             TailoredDocType
+  fileKey          String          @map("file_key")
+  fileName         String          @map("file_name")
+  uploadedById     String          @map("uploaded_by") @db.Uuid
+  uploadedAt       DateTime        @default(now()) @map("uploaded_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  jobApplication JobApplication @relation(fields: [jobApplicationId], references: [id], onDelete: Cascade)
+  uploadedBy     User           @relation("TailoredUploader", fields: [uploadedById], references: [id])
+
+  @@map("tailored_documents")
+}
+
+model InterviewResource {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  description String
+  fileKey     String?  @map("file_key")
+  fileName    String?  @map("file_name")
+  tipText     String?  @map("tip_text")
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy User @relation("ResourceCreator", fields: [createdById], references: [id])
+
+  @@map("interview_resources")
+}
+
+model DailyPulseLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  clientId     String   @map("client_id") @db.Uuid
+  sentDate     DateTime @map("sent_date") @db.Date
+  jobCountSent Int      @map("job_count_sent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  client ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, sentDate])
+  @@map("daily_pulse_log")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum LeadStatus {
+  new
+  contacted
+  closed
+}
+
+model ConsultationRequest {
+  id        String     @id @default(uuid()) @db.Uuid
+  fullName  String     @map("full_name")
+  email     String
+  phone     String?
+  interest  String?
+  message   String?
+  status    LeadStatus @default(new)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("consultation_requests")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
