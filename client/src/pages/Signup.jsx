@@ -60,7 +60,7 @@ export default function Signup() {
             and a specialist applying to hand-picked roles on your behalf.
           </p>
         </div>
-        <div className="relative text-xs text-ivory/40">© {new Date().getFullYear()} Get Hired UK</div>
+        <div className="relative text-xs text-ivory/40">© 2016 Get Hired UK</div>
       </div>
 
       {/* Form panel */}

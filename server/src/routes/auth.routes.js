@@ -45,7 +45,7 @@ router.post('/login', loginLimiter, validate(loginSchema), async (req, res, next
     }
     if (user.approvalStatus === 'rejected') {
       return res.status(403).json({
-        error: 'Your sign-up request was not approved. Please contact hello@gethired.world.',
+        error: 'Your sign-up request was not approved. Please contact Career@gethired.world.',
         code: 'REJECTED',
       });
     }

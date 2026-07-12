@@ -53,7 +53,7 @@ export default function Login() {
             A dedicated team applying to hand-picked roles for you, every single day — with a tailored CV and cover letter for every application.
           </p>
         </div>
-        <div className="relative text-xs text-ivory/40">© {new Date().getFullYear()} Get Hired UK</div>
+        <div className="relative text-xs text-ivory/40">© 2016 Get Hired UK</div>
       </div>
 
       {/* Form panel */}

@@ -5,6 +5,14 @@ import { api, API_BASE } from '../api/client';
 
 const HOME = { admin: '/admin', employee: '/employee', client: '/client' };
 
+const CONTACT_EMAIL = 'Career@gethired.world';
+// UK mobiles: 07… → +447… for the wa.me deep link.
+const WHATSAPP = [
+  { display: '07584 076205', wa: '447584076205' },
+  { display: '07584 076159', wa: '447584076159' },
+];
+const waLink = (n) => `https://wa.me/${n}?text=${encodeURIComponent("Hi Get Hired UK — I'd like to know more about your packages.")}`;
+
 /* ---------------- real, live information ---------------- */
 
 function useLondonClock() {
@@ -91,6 +99,12 @@ const ic = {
   pulse2: <><path d="M3.5 12h4l2-5 4.5 10 2.5-5h4" /></>,
   cog: <><circle cx="12" cy="12" r="3.2" /><path d="M12 3.8v2.4M12 17.8v2.4M3.8 12h2.4M17.8 12h2.4M6.2 6.2l1.7 1.7M16.1 16.1l1.7 1.7M17.8 6.2l-1.7 1.7M7.9 16.1l-1.7 1.7" /></>,
   mega: <><path d="M4 10.5v3.5h3l6 4V6l-6 4H4z" /><path d="M16.5 9.5a4 4 0 010 5.5" /></>,
+  whatsapp: (
+    <>
+      <path d="M20.5 11.7a8.4 8.4 0 01-12.3 7.4L3.5 20.5l1.5-4.6A8.4 8.4 0 1120.5 11.7z" />
+      <path d="M8.9 8.4c.2-.5.4-.5.6-.5h.5c.2 0 .4 0 .6.4l.7 1.7c.1.2 0 .4-.1.5l-.4.5c-.1.2-.3.3-.1.6a6 6 0 002.7 2.3c.3.1.5.1.6-.1l.5-.6c.2-.2.3-.2.6-.1l1.6.8c.2.1.4.2.4.4a1.9 1.9 0 01-1.3 1.4c-.5.1-1.2.2-3.5-.8a7.6 7.6 0 01-3.3-3.4c-.9-1.8-.3-2.7-.1-3.1z" />
+    </>
+  ),
 };
 
 /* ---------------- consultation booking (fully dynamic) ---------------- */
@@ -212,7 +226,7 @@ function ConsultationModal({ open, interest, onClose }) {
               {!busy && <I d={ic.arrow} size={16} className="transition-transform group-hover:translate-x-1" />}
             </button>
             <p className="text-center text-[12px] text-ink-soft/70">
-              Prefer email? <a href="mailto:hello@gethired.world" className="font-semibold text-gold-600 hover:underline">hello@gethired.world</a>
+              Prefer email? <a href="mailto:Career@gethired.world" className="font-semibold text-gold-600 hover:underline">Career@gethired.world</a>
             </p>
           </form>
         )}
@@ -384,7 +398,7 @@ export default function Landing() {
             <Reveal delay={320}>
               <ul className="mt-10 flex max-w-lg flex-wrap gap-x-8 gap-y-3">
                 {[
-                  [ic.send, 'Up to 40 applications a month'],
+                  [ic.send, 'Up to 40 applications a week'],
                   [ic.pen, 'Every document tailored'],
                   [ic.mail, 'Reported daily at 19:00'],
                 ].map(([d, t]) => (
@@ -442,12 +456,23 @@ export default function Landing() {
             <span className="text-ink-soft/40">·</span>
             London {clock || '—'}
           </p>
-          <p className="hidden text-[12.5px] font-medium text-ink-soft sm:block">
-            One named specialist per client · 3–5 career domains · no recycled PDFs, ever
+          <p className="hidden text-[12.5px] font-medium text-ink-soft lg:block">
+            One named specialist per client · 3–4 career domains · no recycled PDFs, ever
           </p>
-          <a href="mailto:hello@gethired.world" className="text-[12.5px] font-semibold text-gold-600 hover:underline">
-            hello@gethired.world
-          </a>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[12.5px] font-semibold text-gold-600 hover:underline">
+              {CONTACT_EMAIL}
+            </a>
+            <a
+              href={waLink(WHATSAPP[0].wa)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-navy-800 transition hover:text-[#25D366]"
+            >
+              <I d={ic.whatsapp} size={15} className="text-[#25D366]" />
+              WhatsApp us
+            </a>
+          </div>
         </div>
       </div>
 
@@ -465,7 +490,7 @@ export default function Landing() {
           <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[
               [ic.chat, 'Free consultation', 'We meet, understand your background and ambitions, and agree how we can help — before any commitment.'],
-              [ic.target, 'Strategy & domains', 'Together we define the 3–5 career domains your search should focus on. Focus is what makes volume work.'],
+              [ic.target, 'Strategy & domains', 'Together we define the 3–4 career domains your search should focus on. Focus is what makes volume work.'],
               [ic.doc, 'Master documents', 'Your specialist writes a master CV and cover letter for each domain. Nothing is used until you approve it.'],
               [ic.send, 'Daily applications', 'We source live roles every working day and apply with documents rewritten for each specific job.'],
               [ic.linkedin, 'LinkedIn & preparation', 'Your profile is rebuilt to recruiter standard while interview guides and coaching notes fill your prep hub.'],
@@ -549,7 +574,7 @@ export default function Landing() {
                 Professional roles, UK-wide
               </h2>
               <p className="mt-4 text-[15px] leading-[1.8] text-ink-soft">
-                Your 3–5 domains keep the search sharp. These are the fields we work in most.
+                Your 3–4 domains keep the search sharp. These are the fields we work in most.
               </p>
             </Reveal>
           </div>
@@ -585,7 +610,7 @@ export default function Landing() {
             <Reveal>
               <p className="text-[12px] font-bold uppercase tracking-[0.24em] text-gold-600">Packages</p>
               <h2 className="mt-3 font-display text-3xl tracking-tight text-navy-800 sm:text-[2.4rem]">
-                Three packages. One standard.
+                Four packages. One standard.
               </h2>
               <p className="mt-4 text-[15px] leading-[1.8] text-ink-soft">
                 Pricing is shared during your consultation — shaped to your seniority and
@@ -594,43 +619,87 @@ export default function Landing() {
             </Reveal>
           </div>
 
-          <div className="mx-auto mt-12 grid max-w-6xl gap-6 md:grid-cols-3">
+          <div className="mx-auto mt-12 grid max-w-7xl gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { name: 'Silver', jobs: 20, tag: 'A steady start', dark: false },
-              { name: 'Gold', jobs: 30, tag: 'Focused momentum', dark: false },
-              { name: 'Platinum', jobs: 40, tag: 'Our full weight', dark: true },
+              {
+                name: 'Silver',
+                tag: 'The essentials',
+                dark: false,
+                features: [
+                  'Tailored CV (3–4 domains)',
+                  'Tailored cover letters',
+                ],
+              },
+              {
+                name: 'Gold',
+                tag: 'Add your profile',
+                dark: false,
+                features: [
+                  'Tailored CV (3–4 domains)',
+                  'Tailored cover letters',
+                  'LinkedIn optimisation',
+                ],
+              },
+              {
+                name: 'Platinum',
+                tag: 'Everything, at pace',
+                dark: true,
+                highlight: '40 tailored job applications per week',
+                features: [
+                  'Tailored CV (3–4 domains)',
+                  'Tailored cover letters',
+                  'LinkedIn optimisation',
+                  'Interview Preparation Hub',
+                ],
+                sub: [
+                  '1 interview prep session',
+                  '1 mock interview',
+                  'Tailored prep report for your scheduled interview',
+                ],
+              },
+              {
+                name: 'Interview Prep',
+                tag: 'Standalone',
+                dark: false,
+                accent: true,
+                features: [
+                  '5 interview prep sessions',
+                  '2 mock interviews',
+                ],
+              },
             ].map((p, i) => (
-              <Reveal key={p.name} delay={i * 110}>
-                <div className={`relative flex h-full flex-col rounded-3xl p-8 sm:p-9 ${
+              <Reveal key={p.name} delay={i * 90}>
+                <div className={`relative flex h-full flex-col rounded-3xl p-7 ${
                   p.dark
                     ? 'bg-gradient-to-b from-navy-800 to-navy-950 text-ivory shadow-[0_30px_60px_-20px_rgba(5,15,38,0.55)] ring-2 ring-gold-500'
-                    : 'border border-navy-800/10 bg-white text-ink shadow-card'
+                    : p.accent
+                      ? 'border border-gold-500/40 bg-gold-100/30 text-ink shadow-card'
+                      : 'border border-navy-800/10 bg-white text-ink shadow-card'
                 }`}>
                   {p.dark && (
                     <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gold-500 px-4 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-navy-900">
                       Most popular
                     </span>
                   )}
-                  <div className="flex items-baseline justify-between">
-                    <h3 className={`font-display text-[1.6rem] ${p.dark ? 'text-gold-300' : 'text-navy-800'}`}>{p.name}</h3>
-                    <span className={`text-[12px] font-semibold uppercase tracking-[0.14em] ${p.dark ? 'text-ivory/45' : 'text-ink-soft/70'}`}>{p.tag}</span>
-                  </div>
-                  <div className="mt-6 flex items-baseline gap-3">
-                    <span className="font-display text-[4.2rem] leading-none tracking-tight">{p.jobs}</span>
-                    <span className={`text-[13.5px] leading-snug ${p.dark ? 'text-ivory/55' : 'text-ink-soft'}`}>
-                      tailored applications<br />per month, up to
-                    </span>
-                  </div>
-                  <div className={`my-7 h-px ${p.dark ? 'bg-white/10' : 'bg-navy-800/10'}`} aria-hidden="true" />
-                  <ul className={`space-y-3.5 text-[14.5px] ${p.dark ? 'text-ivory/85' : 'text-ink'}`}>
-                    {[
-                      '3–5 domains with master documents',
-                      'A named, dedicated specialist',
-                      'Live dashboard + Daily Pulse email',
-                      'LinkedIn rebuilt to recruiter standard',
-                      'Interview preparation hub',
-                    ].map((f) => (
-                      <li key={f} className="flex items-start gap-3">
+                  <h3 className={`font-display text-[1.55rem] ${p.dark ? 'text-gold-300' : 'text-navy-800'}`}>{p.name}</h3>
+                  <span className={`mt-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] ${p.dark ? 'text-ivory/45' : 'text-ink-soft/70'}`}>
+                    {p.tag}
+                  </span>
+
+                  {p.highlight && (
+                    <div className="mt-5 rounded-2xl bg-gold-500/15 px-4 py-3 ring-1 ring-gold-500/30">
+                      <span className="font-display text-[2.6rem] leading-none text-gold-300">40</span>
+                      <span className="mt-1 block text-[12.5px] leading-snug text-ivory/70">
+                        tailored job applications<br />per week
+                      </span>
+                    </div>
+                  )}
+
+                  <div className={`my-6 h-px ${p.dark ? 'bg-white/10' : 'bg-navy-800/10'}`} aria-hidden="true" />
+
+                  <ul className={`space-y-3 text-[14px] ${p.dark ? 'text-ivory/85' : 'text-ink'}`}>
+                    {p.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2.5">
                         <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${p.dark ? 'bg-gold-500/20 text-gold-300' : 'bg-gold-100 text-gold-600'}`}>
                           <I d={ic.check} size={11} />
                         </span>
@@ -638,13 +707,22 @@ export default function Landing() {
                       </li>
                     ))}
                   </ul>
+
+                  {p.sub && (
+                    <ul className="mt-3 space-y-1.5 border-l border-gold-500/30 pl-4 text-[12.5px] text-ivory/55">
+                      {p.sub.map((s) => (
+                        <li key={s}>{s}</li>
+                      ))}
+                    </ul>
+                  )}
+
                   <button onClick={() => openConsult(`${p.name} package`)}
-                    className={`mt-9 block w-full rounded-full py-3.5 text-center text-[14px] font-semibold transition ${
+                    className={`mt-auto block w-full rounded-full py-3.5 text-center text-[14px] font-semibold transition ${
                       p.dark
-                        ? 'bg-gold-500 text-navy-900 hover:bg-gold-400'
-                        : 'border border-navy-800/25 text-navy-800 hover:border-navy-800 hover:bg-navy-800 hover:text-ivory'
+                        ? 'mt-8 bg-gold-500 text-navy-900 hover:bg-gold-400'
+                        : 'mt-8 border border-navy-800/25 text-navy-800 hover:border-navy-800 hover:bg-navy-800 hover:text-ivory'
                     }`}>
-                    Enquire about {p.name}
+                    Enquire
                   </button>
                 </div>
               </Reveal>
@@ -718,7 +796,7 @@ export default function Landing() {
                 Client Portal
               </Link>
             </div>
-            <p className="mt-7 text-[12.5px] text-ivory/35">hello@gethired.world · replies within one working day</p>
+            <p className="mt-7 text-[12.5px] text-ivory/35">Career@gethired.world · replies within one working day</p>
           </Reveal>
         </div>
       </section>
@@ -754,23 +832,35 @@ export default function Landing() {
                   </button>
                 </li>
                 <li><Link to="/login" className="transition hover:text-gold-300">Client Portal</Link></li>
-                <li><a href="mailto:hello@gethired.world" className="transition hover:text-gold-300">hello@gethired.world</a></li>
+                <li><a href="mailto:Career@gethired.world" className="transition hover:text-gold-300">Career@gethired.world</a></li>
               </ul>
             </div>
             <div className="md:col-span-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ivory/35">Office</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ivory/35">WhatsApp</p>
               <ul className="mt-4 space-y-2.5 text-[13.5px] text-ivory/60">
-                <li>London, United Kingdom</li>
-                <li className="tabular-nums">Local time · {clock || '—'}</li>
+                {WHATSAPP.map((w) => (
+                  <li key={w.wa}>
+                    <a
+                      href={waLink(w.wa)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 transition hover:text-gold-300"
+                    >
+                      <I d={ic.whatsapp} size={15} className="text-[#25D366]" />
+                      {w.display}
+                    </a>
+                  </li>
+                ))}
+                <li className="pt-1">London, United Kingdom</li>
                 <li className="flex items-center gap-2">
                   <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-success' : 'bg-navy-100/30'}`} aria-hidden="true" />
-                  Portal {online === null ? '…' : online ? 'online' : 'offline'}
+                  Portal {online === null ? '…' : online ? 'online' : 'offline'} · {clock || '—'}
                 </li>
               </ul>
             </div>
           </div>
           <div className="mt-12 flex flex-col justify-between gap-2 border-t border-white/10 pt-6 text-[12px] text-ivory/30 sm:flex-row">
-            <p>© {new Date().getFullYear()} Get Hired UK. All rights reserved.</p>
+            <p>© 2016 Get Hired UK. All rights reserved.</p>
             <p>Portal screenshots show sample data.</p>
           </div>
         </div>
@@ -781,6 +871,20 @@ export default function Landing() {
         interest={consult?.interest}
         onClose={() => setConsult(null)}
       />
+
+      {/* Floating WhatsApp — always one tap from a conversation */}
+      <a
+        href={waLink(WHATSAPP[0].wa)}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chat with us on WhatsApp"
+        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-[0_10px_30px_-6px_rgba(37,211,102,0.6)] transition hover:scale-105 sm:bottom-7 sm:right-7"
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2s-.7 1-.9 1.2c-.2.2-.3.2-.6.1a8 8 0 01-2.4-1.5 9 9 0 01-1.6-2c-.2-.3 0-.5.1-.6l.5-.6c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-1-2.3c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.2-.6-.4z" />
+          <path d="M12 2a10 10 0 00-8.6 15.1L2 22l5-1.3A10 10 0 1012 2zm0 18.2a8.2 8.2 0 01-4.2-1.1l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1112 20.2z" />
+        </svg>
+      </a>
     </div>
   );
 }

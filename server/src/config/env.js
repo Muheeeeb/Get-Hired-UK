@@ -42,7 +42,7 @@ export const env = {
     from: process.env.MAIL_FROM || 'Get Hired UK <pulse@gethired.world>',
   },
   // Inbox that receives new sign-up + consultation notifications.
-  officeEmail: process.env.OFFICE_EMAIL || 'hello@gethired.world',
+  officeEmail: process.env.OFFICE_EMAIL || 'Career@gethired.world',
   pulse: {
     cron: process.env.PULSE_CRON || '0 18 * * *',
     timezone: process.env.PULSE_TIMEZONE || 'Europe/London',

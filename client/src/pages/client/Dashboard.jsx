@@ -66,7 +66,7 @@ export default function ClientDashboard() {
                   </div>
                 </div>
               </div>
-              <Button variant="alert" onClick={() => window.open('mailto:renewals@gethired.world?subject=Package renewal', '_blank')}>
+              <Button variant="alert" onClick={() => window.open('mailto:Career@gethired.world?subject=Package renewal', '_blank')}>
                 Renew now →
               </Button>
             </div>

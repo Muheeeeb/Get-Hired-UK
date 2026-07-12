@@ -37,7 +37,7 @@ const leadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
   legacyHeaders: false,
-  message: { error: 'Too many requests — please try again later or email hello@gethired.world' },
+  message: { error: 'Too many requests — please try again later or email Career@gethired.world' },
 });
 
 const leadSchema = z.object({
