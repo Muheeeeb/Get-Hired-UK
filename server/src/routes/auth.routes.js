@@ -45,7 +45,7 @@ router.post('/login', loginLimiter, validate(loginSchema), async (req, res, next
     }
     if (user.approvalStatus === 'rejected') {
       return res.status(403).json({
-        error: 'Your sign-up request was not approved. Please contact hello@gethired.uk.',
+        error: 'Your sign-up request was not approved. Please contact hello@gethired.world.',
         code: 'REJECTED',
       });
     }
@@ -112,7 +112,7 @@ router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, n
 
     // Notify the office; never fail the request if mail transport is down.
     sendMail({
-      to: 'hello@gethired.uk',
+      to: env.officeEmail,
       subject: `New client sign-up awaiting approval — ${fullName}`,
       html: brandedEmail({
         heading: 'New Sign-up Request',

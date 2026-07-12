@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { validate } from '../middleware/validate.js';
 import { sendMail, brandedEmail } from '../lib/mailer.js';
+import { env } from '../config/env.js';
 import { startOfMonth } from '../utils/dates.js';
 
 const router = Router();
@@ -36,7 +37,7 @@ const leadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
   legacyHeaders: false,
-  message: { error: 'Too many requests — please try again later or email hello@gethired.uk' },
+  message: { error: 'Too many requests — please try again later or email hello@gethired.world' },
 });
 
 const leadSchema = z.object({
@@ -63,7 +64,7 @@ router.post('/consultations', leadLimiter, validate(leadSchema), async (req, res
 
     // Notify the office; never fail the request if mail transport is down.
     sendMail({
-      to: 'hello@gethired.uk',
+      to: env.officeEmail,
       subject: `New consultation request — ${fullName}`,
       html: brandedEmail({
         heading: 'New Consultation Request',

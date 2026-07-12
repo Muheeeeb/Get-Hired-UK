@@ -1,14 +1,12 @@
 # Caddy: reverse proxy + automatic HTTPS (Let's Encrypt certs, auto-renewed).
-# Replace api.gethired.uk with your real API subdomain, and set an email for
-# certificate expiry notices.
-#
-# Install:  /etc/caddy/Caddyfile   then:  sudo systemctl reload caddy
+# Install:  sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#           sudo systemctl reload caddy
 
 {
-	email hello@gethired.uk
+	email hello@gethired.world
 }
 
-api.gethired.uk {
+api.gethired.world {
 	# The Node app listens on localhost:4000 (never exposed publicly).
 	reverse_proxy 127.0.0.1:4000
 

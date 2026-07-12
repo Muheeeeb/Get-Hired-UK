@@ -212,7 +212,7 @@ function ConsultationModal({ open, interest, onClose }) {
               {!busy && <I d={ic.arrow} size={16} className="transition-transform group-hover:translate-x-1" />}
             </button>
             <p className="text-center text-[12px] text-ink-soft/70">
-              Prefer email? <a href="mailto:hello@gethired.uk" className="font-semibold text-gold-600 hover:underline">hello@gethired.uk</a>
+              Prefer email? <a href="mailto:hello@gethired.world" className="font-semibold text-gold-600 hover:underline">hello@gethired.world</a>
             </p>
           </form>
         )}
@@ -413,7 +413,7 @@ export default function Landing() {
                     <i className="h-2.5 w-2.5 rounded-full bg-[#41c163]" />
                   </span>
                   <span className="mx-auto flex items-center gap-1.5 rounded-md bg-white px-4 py-1 text-[11px] text-ink-soft shadow-sm">
-                    <I d={ic.shield} size={11} className="text-success" /> portal.gethired.uk
+                    <I d={ic.shield} size={11} className="text-success" /> portal.gethired.world
                   </span>
                 </div>
                 <img
@@ -445,8 +445,8 @@ export default function Landing() {
           <p className="hidden text-[12.5px] font-medium text-ink-soft sm:block">
             One named specialist per client · 3–5 career domains · no recycled PDFs, ever
           </p>
-          <a href="mailto:hello@gethired.uk" className="text-[12.5px] font-semibold text-gold-600 hover:underline">
-            hello@gethired.uk
+          <a href="mailto:hello@gethired.world" className="text-[12.5px] font-semibold text-gold-600 hover:underline">
+            hello@gethired.world
           </a>
         </div>
       </div>
@@ -718,7 +718,7 @@ export default function Landing() {
                 Client Portal
               </Link>
             </div>
-            <p className="mt-7 text-[12.5px] text-ivory/35">hello@gethired.uk · replies within one working day</p>
+            <p className="mt-7 text-[12.5px] text-ivory/35">hello@gethired.world · replies within one working day</p>
           </Reveal>
         </div>
       </section>
@@ -754,7 +754,7 @@ export default function Landing() {
                   </button>
                 </li>
                 <li><Link to="/login" className="transition hover:text-gold-300">Client Portal</Link></li>
-                <li><a href="mailto:hello@gethired.uk" className="transition hover:text-gold-300">hello@gethired.uk</a></li>
+                <li><a href="mailto:hello@gethired.world" className="transition hover:text-gold-300">hello@gethired.world</a></li>
               </ul>
             </div>
             <div className="md:col-span-3">

@@ -65,7 +65,7 @@ export async function revokeRefreshToken(raw) {
 /**
  * COOKIE_SAMESITE=none is required when the SPA and API live on different
  * *sites* (e.g. yourapp.vercel.app + an AWS URL). With a shared custom domain
- * (www.gethired.uk + api.gethired.uk) keep the default "lax".
+ * (www.gethired.world + api.gethired.world) keep the default "lax".
  * SameSite=None cookies are only accepted over HTTPS, hence secure: true.
  */
 const sameSite = process.env.COOKIE_SAMESITE === 'none' ? 'none' : 'lax';
