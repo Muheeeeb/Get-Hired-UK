@@ -20,9 +20,19 @@ export function createApp() {
 
   app.set('trust proxy', 1);
   app.use(helmet());
+  // CLIENT_ORIGIN may list several allowed origins, comma-separated
+  // (e.g. "https://www.gethired.world,https://gethired.world").
+  const allowedOrigins = env.clientOrigin
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.use(
     cors({
-      origin: env.clientOrigin,
+      origin(origin, cb) {
+        // Same-origin/server-side calls send no Origin header — allow them.
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+        return cb(new Error('Not allowed by CORS'));
+      },
       credentials: true,
     })
   );
