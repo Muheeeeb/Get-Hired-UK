@@ -36,6 +36,11 @@ model User {
   passwordHash String    @map("password_hash")
   role         Role
   isActive     Boolean   @default(true) @map("is_active")
+  // Admin-created and bootstrap accounts default to approved; self-service
+  // client sign-ups are created as pending and gate login until approved.
+  approvalStatus ApprovalStatus @default(approved) @map("approval_status")
+  phone        String?
+  signupNote   String?   @map("signup_note")
   lastLoginAt  DateTime? @map("last_login_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -187,6 +192,12 @@ enum LeadStatus {
   new
   contacted
   closed
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
 }
 
 model ConsultationRequest {

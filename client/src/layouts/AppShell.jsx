@@ -10,6 +10,7 @@ const NAV = {
     { to: '/admin/clients', label: 'Clients', icon: '👤' },
     { to: '/admin/employees', label: 'Employees', icon: '🧑‍💼' },
     { to: '/admin/leaderboard', label: 'Leaderboard', icon: '🏆' },
+    { to: '/admin/signups', label: 'Sign-ups', icon: '✍️' },
     { to: '/admin/leads', label: 'Leads', icon: '📥' },
     { to: '/admin/resources', label: 'Prep Hub', icon: '🎓' },
   ],

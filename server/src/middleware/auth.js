@@ -16,7 +16,7 @@ export async function authenticate(req, res, next) {
     }
 
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive || user.deletedAt) {
+    if (!user || !user.isActive || user.deletedAt || user.approvalStatus !== 'approved') {
       return res.status(401).json({ error: 'Account is not active' });
     }
     req.user = user;

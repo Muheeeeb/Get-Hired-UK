@@ -37,6 +37,18 @@ router.post('/login', loginLimiter, validate(loginSchema), async (req, res, next
     const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     const valid = user && !user.deletedAt && (await bcrypt.compare(password, user.passwordHash));
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+    if (user.approvalStatus === 'pending') {
+      return res.status(403).json({
+        error: 'Your account is awaiting admin approval. We will email you once it is activated.',
+        code: 'PENDING_APPROVAL',
+      });
+    }
+    if (user.approvalStatus === 'rejected') {
+      return res.status(403).json({
+        error: 'Your sign-up request was not approved. Please contact hello@gethired.uk.',
+        code: 'REJECTED',
+      });
+    }
     if (!user.isActive) return res.status(403).json({ error: 'This account has been deactivated' });
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
@@ -47,6 +59,74 @@ router.post('/login', loginLimiter, validate(loginSchema), async (req, res, next
     res.json({
       accessToken,
       user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- public client self-registration ----------
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-up attempts — please try again later.' },
+});
+
+const signupSchema = z.object({
+  fullName: z.string().min(2, 'Please enter your full name').max(120),
+  email: z.string().email('Please enter a valid email').max(254),
+  password: z.string().min(10, 'Password must be at least 10 characters').max(200),
+  phone: z.string().max(40).optional().or(z.literal('')),
+  note: z.string().max(2000).optional().or(z.literal('')),
+});
+
+/**
+ * Client self-registration. Creates a PENDING client account — it cannot sign in
+ * until an admin approves it (and provisions their package/domains at that point).
+ */
+router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, next) => {
+  try {
+    const { fullName, email, password, phone, note } = req.body;
+    const lower = email.toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email: lower } });
+    if (existing) {
+      // Do not reveal account state; guide them to sign in / reset instead.
+      return res.status(409).json({
+        error: 'An account with this email already exists. Try signing in or resetting your password.',
+      });
+    }
+
+    await prisma.user.create({
+      data: {
+        fullName,
+        email: lower,
+        passwordHash: await bcrypt.hash(password, 12),
+        role: 'client',
+        approvalStatus: 'pending',
+        phone: phone || null,
+        signupNote: note || null,
+      },
+    });
+
+    // Notify the office; never fail the request if mail transport is down.
+    sendMail({
+      to: 'hello@gethired.uk',
+      subject: `New client sign-up awaiting approval — ${fullName}`,
+      html: brandedEmail({
+        heading: 'New Sign-up Request',
+        bodyHtml: `
+          <p><strong>${fullName}</strong> &lt;${lower}&gt;${phone ? ` · ${phone}` : ''}</p>
+          ${note ? `<p>${String(note).replace(/</g, '&lt;')}</p>` : ''}
+          <p>Review and approve in the admin portal → Sign-ups.</p>`,
+      }),
+      text: `New sign-up: ${fullName} <${lower}> ${phone || ''}`,
+    }).catch((err) => console.error('[signup] office notification failed:', err.message));
+
+    res.status(201).json({
+      ok: true,
+      message: 'Thanks for registering! Your account is awaiting approval — we will email you once it is activated.',
     });
   } catch (err) {
     next(err);

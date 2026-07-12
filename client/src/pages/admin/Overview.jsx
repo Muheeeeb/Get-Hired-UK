@@ -52,16 +52,23 @@ export default function AdminOverview() {
       )}
       {data && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <StatCard label="Active Clients" value={data.kpis.activeClients} delay={0} />
             <StatCard label="Employees" value={data.kpis.activeEmployees} delay={1} />
             <StatCard label="Jobs Logged Today" value={data.kpis.jobsToday} tone="gold" sub={`${data.kpis.jobsThisMonth} this month`} delay={2} />
+            <StatCard
+              label="Pending Sign-ups"
+              value={data.kpis.pendingSignups ?? 0}
+              tone={data.kpis.pendingSignups > 0 ? 'gold' : 'navy'}
+              sub="awaiting approval"
+              delay={3}
+            />
             <StatCard
               label="New Leads"
               value={data.kpis.newLeads ?? 0}
               tone={data.kpis.newLeads > 0 ? 'gold' : 'navy'}
               sub="from the website"
-              delay={3}
+              delay={4}
             />
             <StatCard
               label="Expiring ≤ 7 Days"

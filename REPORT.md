@@ -28,7 +28,12 @@ through the UI from here.
    button triggers the evening email manually.
 4. **Leaderboard** → jobs logged per employee, Today / This Week / This Month, ranked,
    with each employee's prorated target marked on the bar and a green ✓ / amber △ / red ✕ status.
-5. **Prep Hub** → publish interview guides (with file) and tips that every client sees.
+5. **Sign-ups** → clients can self-register on the website (`/signup`); their
+   request lands here as **pending** and they cannot sign in until you act.
+   "Approve & set up" provisions their package, expiry, target, employee and
+   domains in one step (and emails them that they're activated); "Reject" blocks
+   access. A "Pending Sign-ups" KPI shows on the Overview.
+6. **Prep Hub** → publish interview guides (with file) and tips that every client sees.
 6. **Client detail page** → everything about one client: momentum, package editing,
    employee reassignment, domain editing, master documents, and the full job log
    **including tailored-file downloads** (admin sees all).

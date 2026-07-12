@@ -6,6 +6,8 @@ import { authenticate, authorizeRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { todayISO, dateOnly, startOfWeek, startOfMonth, daysUntil } from '../utils/dates.js';
 import { runDailyPulse } from '../jobs/dailyPulse.js';
+import { sendMail, brandedEmail } from '../lib/mailer.js';
+import { env } from '../config/env.js';
 
 const router = Router();
 router.use(authenticate, authorizeRole(['admin']));
@@ -130,6 +132,112 @@ router.post('/clients', validate(createClientSchema), async (req, res, next) => 
     });
 
     res.status(201).json({ client: profile });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- client sign-up requests (self-registration approvals) ----------
+
+router.get('/signups', async (req, res, next) => {
+  try {
+    const status = ['pending', 'approved', 'rejected'].includes(req.query.status)
+      ? req.query.status
+      : 'pending';
+    const signups = await prisma.user.findMany({
+      where: { role: 'client', approvalStatus: status, deletedAt: null },
+      select: {
+        id: true, fullName: true, email: true, phone: true, signupNote: true,
+        approvalStatus: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const pendingCount = await prisma.user.count({
+      where: { role: 'client', approvalStatus: 'pending', deletedAt: null },
+    });
+    res.json({ signups, pendingCount });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const approveSchema = z.object({
+  packageType: z.string().min(2).max(80),
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  monthlyJobTarget: z.number().int().min(1).max(500).default(40),
+  assignedEmployeeId: z.string().uuid().optional(),
+  domains: z
+    .array(z.string().min(2).max(80))
+    .min(3, 'At least 3 domains required')
+    .max(5, 'At most 5 domains allowed')
+    .optional(),
+});
+
+/** Approve a pending sign-up AND provision the client's package/domains in one step. */
+router.put('/signups/:id/approve', validate(approveSchema), async (req, res, next) => {
+  try {
+    const { packageType, expiryDate, monthlyJobTarget, assignedEmployeeId, domains } = req.body;
+    const user = await prisma.user.findFirst({
+      where: { id: req.params.id, role: 'client', approvalStatus: 'pending', deletedAt: null },
+      include: { clientProfile: true },
+    });
+    if (!user) return res.status(404).json({ error: 'Pending sign-up not found' });
+
+    if (assignedEmployeeId) {
+      const emp = await prisma.user.findFirst({
+        where: { id: assignedEmployeeId, role: 'employee', isActive: true, deletedAt: null },
+      });
+      if (!emp) return res.status(400).json({ error: 'Assigned employee not found or inactive' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (!user.clientProfile) {
+        await tx.clientProfile.create({
+          data: {
+            userId: user.id,
+            packageType,
+            expiryDate: dateOnly(expiryDate),
+            monthlyJobTarget,
+            assignedEmployeeId: assignedEmployeeId || null,
+            ...(domains ? { domains: { create: domains.map((name) => ({ name })) } } : {}),
+          },
+        });
+      }
+      await tx.user.update({
+        where: { id: user.id },
+        data: { approvalStatus: 'approved', isActive: true },
+      });
+    });
+
+    sendMail({
+      to: user.email,
+      subject: 'Your Get Hired UK account is approved 🎉',
+      html: brandedEmail({
+        heading: 'You’re all set',
+        bodyHtml: `<p>Hi ${user.fullName.split(' ')[0]},</p><p>Your account has been approved. You can now sign in and watch your search get underway.</p>`,
+        ctaLabel: 'Sign in to your portal',
+        ctaUrl: `${env.clientOrigin}/login`,
+      }),
+      text: `Your Get Hired UK account is approved. Sign in: ${env.clientOrigin}/login`,
+    }).catch((err) => console.error('[approve] email failed:', err.message));
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/signups/:id/reject', async (req, res, next) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { id: req.params.id, role: 'client', approvalStatus: 'pending', deletedAt: null },
+    });
+    if (!user) return res.status(404).json({ error: 'Pending sign-up not found' });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { approvalStatus: 'rejected', isActive: false },
+    });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -367,7 +475,7 @@ router.get('/overview', async (req, res, next) => {
     const today = dateOnly(todayISO());
     const in7days = new Date(today.getTime() + 7 * 86400000);
 
-    const [activeClients, activeEmployees, jobsToday, jobsThisMonth, expiringSoon, newLeads] =
+    const [activeClients, activeEmployees, jobsToday, jobsThisMonth, expiringSoon, newLeads, pendingSignups] =
       await Promise.all([
         prisma.clientProfile.count({ where: { user: { isActive: true, deletedAt: null } } }),
         prisma.user.count({ where: { role: 'employee', isActive: true, deletedAt: null } }),
@@ -381,10 +489,11 @@ router.get('/overview', async (req, res, next) => {
           include: { user: { select: { fullName: true, email: true } } },
         }),
         prisma.consultationRequest.count({ where: { status: 'new' } }),
+        prisma.user.count({ where: { role: 'client', approvalStatus: 'pending', deletedAt: null } }),
       ]);
 
     res.json({
-      kpis: { activeClients, activeEmployees, jobsToday, jobsThisMonth, expiringSoonCount: expiringSoon.length, newLeads },
+      kpis: { activeClients, activeEmployees, jobsToday, jobsThisMonth, expiringSoonCount: expiringSoon.length, newLeads, pendingSignups },
       expiringSoon: expiringSoon.map((c) => ({
         id: c.id,
         fullName: c.user.fullName,

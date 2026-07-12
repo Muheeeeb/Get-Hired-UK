@@ -92,6 +92,13 @@ export default function Login() {
               Forgot your password?
             </Link>
           </div>
+
+          <div className="mt-6 rounded-xl border border-navy-800/10 bg-white px-4 py-3.5 text-center text-sm text-ink-soft">
+            New client?{' '}
+            <Link to="/signup" className="font-semibold text-navy-800 hover:text-gold-600">
+              Create an account →
+            </Link>
+          </div>
         </form>
       </div>
     </div>
