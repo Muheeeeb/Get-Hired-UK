@@ -1,0 +1,86 @@
+name: CI
+
+# Runs on every push and PR. Catches broken builds before they reach production.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  client:
+    name: Client — build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+        working-directory: client
+      - run: npm run build
+        working-directory: client
+
+  server:
+    name: Server — validate & smoke test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gethired
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: gethired_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U gethired"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://gethired:test_password@localhost:5432/gethired_test?schema=public
+      JWT_ACCESS_SECRET: ci_access_secret_not_a_real_key
+      JWT_REFRESH_SECRET: ci_refresh_secret_not_a_real_key
+      FILE_URL_SECRET: ci_file_secret_not_a_real_key
+      STORAGE_DRIVER: local
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+        working-directory: server
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+        working-directory: server
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+        working-directory: server
+
+      - name: Boot the API and check /health
+        working-directory: server
+        run: |
+          node src/index.js &
+          PID=$!
+          for i in $(seq 1 20); do
+            if curl -fsS -m 2 http://127.0.0.1:4000/health; then
+              echo "✅ API booted and healthy"
+              kill $PID
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "✕ API failed to boot"
+          kill $PID 2>/dev/null || true
+          exit 1

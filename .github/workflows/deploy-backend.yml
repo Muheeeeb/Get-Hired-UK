@@ -1,0 +1,52 @@
+name: Deploy backend to AWS
+
+# Auto-deploys the API to EC2 whenever backend code lands on main.
+# The frontend deploys itself — Vercel watches this repo.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   EC2_HOST         18.130.92.149
+#   EC2_SSH_KEY      the full contents of gethired-key.pem
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'deploy/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch: # lets you deploy manually from the Actions tab
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to EC2 (eu-west-2)
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy (pull, migrate, restart, health-gate, auto-rollback)
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            ubuntu@${{ secrets.EC2_HOST }} \
+            'sudo bash /srv/gethired/app/deploy/deploy.sh'
+
+      - name: Verify the API is live over HTTPS
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS -m 5 https://api.gethired.world/health | grep -q '"ok":true'; then
+              echo "✅ https://api.gethired.world is live"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "✕ Public health check failed"
+          exit 1
