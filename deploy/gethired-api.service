@@ -11,8 +11,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=gethired
-WorkingDirectory=/srv/gethired/server
-EnvironmentFile=/srv/gethired/server/.env
+WorkingDirectory=/srv/gethired/app/server
+EnvironmentFile=/srv/gethired/app/server/.env
 ExecStart=/usr/bin/node src/index.js
 
 # Keep it alive — this process also runs the nightly Daily Pulse cron.
@@ -24,7 +24,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/gethired/server
+ReadWritePaths=/srv/gethired/app
 
 StandardOutput=journal
 StandardError=journal
