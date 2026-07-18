@@ -224,6 +224,9 @@ router.post('/clients', validate(createClientSchema), async (req, res, next) => 
           email: email.toLowerCase(),
           passwordHash: await bcrypt.hash(password, 12),
           role: 'client',
+          // Admin-created accounts don't need email verification — the admin
+          // is vouching for the address.
+          emailVerifiedAt: new Date(),
         },
       });
       return tx.clientProfile.create({
