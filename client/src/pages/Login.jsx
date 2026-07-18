@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { Button, Input, Spinner } from '../components/ui';
-import { errorMessage } from '../api/client';
+import { Button, Input, PasswordInput, Spinner } from '../components/ui';
+import { api, errorMessage } from '../api/client';
 
 const HOME = { admin: '/admin', employee: '/employee', client: '/client' };
 
@@ -13,18 +13,31 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [unverified, setUnverified] = useState(false);
+  const [resent, setResent] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setUnverified(false);
     try {
       const user = await login(email, password);
       navigate(HOME[user.role] || '/login');
     } catch (err) {
       setError(errorMessage(err, 'Login failed'));
+      setUnverified(err?.response?.data?.code === 'EMAIL_UNVERIFIED');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resendVerification() {
+    try {
+      await api.post('/auth/resend-verification', { email });
+      setResent(true);
+    } catch {
+      setResent(true);
     }
   }
 
@@ -67,8 +80,8 @@ export default function Login() {
               id="email" label="Email" type="email" required autoComplete="email"
               value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"
             />
-            <Input
-              id="password" label="Password" type="password" required autoComplete="current-password"
+            <PasswordInput
+              id="password" label="Password" required autoComplete="current-password"
               value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••"
             />
           </div>
@@ -76,6 +89,16 @@ export default function Login() {
           {error && (
             <div className="mt-4 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">
               {error}
+              {unverified && (
+                <button
+                  type="button"
+                  onClick={resendVerification}
+                  disabled={resent}
+                  className="mt-2 block font-semibold underline disabled:opacity-60"
+                >
+                  {resent ? 'Verification email sent ✓' : 'Resend verification email'}
+                </button>
+              )}
             </div>
           )}
 

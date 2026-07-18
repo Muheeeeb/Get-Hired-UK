@@ -7,16 +7,16 @@ import { JobTable } from '../../components/JobTable';
 import { DownloadButton } from '../../components/files';
 
 const TABS = [
-  { key: 'jobs', label: 'Log Jobs' },
   { key: 'masters', label: 'Domains & Masters' },
   { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'jobs', label: 'Log Jobs' },
 ];
 
 export default function ClientWorkspace() {
   const { id } = useParams();
   const [dash, setDash] = useState(null);
   const [jobs, setJobs] = useState(null);
-  const [tab, setTab] = useState('jobs');
+  const [tab, setTab] = useState('masters');
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 

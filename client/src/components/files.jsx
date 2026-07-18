@@ -13,10 +13,24 @@ export function DownloadButton({ docId, label = 'Download', className = '' }) {
   async function download() {
     setBusy(true);
     setErr(null);
+    // Open the tab synchronously (inside the click) so popup blockers allow it,
+    // then point it at the signed URL once we have it.
+    const tab = window.open('', '_blank');
     try {
       const { data } = await api.get(`/files/${docId}/signed-url`);
-      window.open(data.url, '_blank', 'noopener');
+      if (tab) {
+        tab.location.replace(data.url);
+      } else {
+        // Popup fully blocked — fall back to same-tab navigation via anchor.
+        const a = document.createElement('a');
+        a.href = data.url;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
     } catch (e) {
+      if (tab) tab.close();
       setErr(errorMessage(e, 'Download failed'));
     } finally {
       setBusy(false);

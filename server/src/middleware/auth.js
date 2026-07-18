@@ -1,5 +1,6 @@
 import { verifyAccessToken } from '../lib/tokens.js';
 import { prisma } from '../lib/prisma.js';
+import { heartbeat } from '../lib/sessions.js';
 
 /** Verifies the Bearer access token and loads the (active) user onto req.user. */
 export async function authenticate(req, res, next) {
@@ -20,10 +21,20 @@ export async function authenticate(req, res, next) {
       return res.status(401).json({ error: 'Account is not active' });
     }
     req.user = user;
+    // Working-time heartbeat — fire and forget, never blocks the request.
+    heartbeat(user.id);
     next();
   } catch (err) {
     next(err);
   }
+}
+
+/** Admin Lead gate — the lead manages other admins and audits activity/chats. */
+export function requireLead(req, res, next) {
+  if (!req.user || req.user.role !== 'admin' || !req.user.isLead) {
+    return res.status(403).json({ error: 'Admin Lead access required' });
+  }
+  next();
 }
 
 /** Role gate. Usage: authorizeRole(['admin', 'employee']) */

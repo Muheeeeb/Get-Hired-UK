@@ -65,15 +65,14 @@ export default function AdminSignups() {
     e.preventDefault();
     setFormError(null);
     const domains = form.domains.map((d) => d.trim()).filter(Boolean);
-    if (domains.length < 3) return setFormError('Please enter at least 3 domains');
     setBusy(true);
     try {
       await api.put(`/admin/signups/${approving.id}/approve`, {
-        packageType: form.packageType,
-        expiryDate: form.expiryDate,
-        monthlyJobTarget: Number(form.monthlyJobTarget),
+        ...(form.packageType ? { packageType: form.packageType } : {}),
+        ...(form.expiryDate ? { expiryDate: form.expiryDate } : {}),
+        ...(form.monthlyJobTarget ? { monthlyJobTarget: Number(form.monthlyJobTarget) } : {}),
         ...(form.assignedEmployeeId ? { assignedEmployeeId: form.assignedEmployeeId } : {}),
-        domains,
+        ...(domains.length ? { domains } : {}),
       });
       setApproving(null);
       flash(`${approving.fullName} approved — they can now sign in.`);
@@ -127,6 +126,9 @@ export default function AdminSignups() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-navy-800">{s.fullName}</span>
                       <Badge tone={STATUS[s.approvalStatus].tone}>{STATUS[s.approvalStatus].label}</Badge>
+                      {s.emailVerifiedAt
+                        ? <Badge tone="success">✉ Verified</Badge>
+                        : <Badge tone="alert">✉ Unverified</Badge>}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-ink-soft">
                       <a href={`mailto:${s.email}`} className="font-medium text-gold-600 hover:underline">{s.email}</a>
@@ -153,14 +155,15 @@ export default function AdminSignups() {
       <Modal open={Boolean(approving)} onClose={() => setApproving(null)} title={`Approve ${approving?.fullName || ''}`} wide>
         <form onSubmit={submitApprove} className="space-y-4">
           <p className="rounded-xl bg-ivory px-4 py-3 text-sm text-ink-soft">
-            Set up <strong className="text-navy-800">{approving?.email}</strong>'s package and domains. Approving activates their sign-in.
+            Everything here is optional — you can approve now and set the package and
+            domains later from <strong className="text-navy-800">{approving?.email}</strong>'s client page.
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Input id="a-package" label="Package type" required value={form.packageType}
+            <Input id="a-package" label="Package type (optional)" value={form.packageType}
               onChange={(e) => setForm({ ...form, packageType: e.target.value })} />
-            <Input id="a-expiry" label="Expiry date" type="date" required value={form.expiryDate}
+            <Input id="a-expiry" label="Expiry date (optional)" type="date" value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
-            <Input id="a-target" label="Monthly target" type="number" min={1} max={500} required
+            <Input id="a-target" label="Monthly target (optional)" type="number" min={1} max={2000}
               value={form.monthlyJobTarget} onChange={(e) => setForm({ ...form, monthlyJobTarget: e.target.value })} />
           </div>
           <Select id="a-emp" label="Assign to employee" value={form.assignedEmployeeId}
@@ -171,7 +174,7 @@ export default function AdminSignups() {
             ))}
           </Select>
           <div>
-            <span className="label-caps text-navy-800/70 block mb-1.5">Domains (3–5)</span>
+            <span className="label-caps text-navy-800/70 block mb-1.5">Domains (optional — set now or later)</span>
             <div className="space-y-2">
               {form.domains.map((d, i) => (
                 <Input key={i} id={`a-domain-${i}`} placeholder={`Domain ${i + 1} — e.g. Software Engineer`}
@@ -179,11 +182,11 @@ export default function AdminSignups() {
               ))}
             </div>
             <div className="mt-2 flex gap-2">
-              {form.domains.length < 5 && (
+              {form.domains.length < 10 && (
                 <Button type="button" variant="ghost" className="!px-3 !py-1.5 text-xs"
                   onClick={() => setForm({ ...form, domains: [...form.domains, ''] })}>+ Add domain</Button>
               )}
-              {form.domains.length > 3 && (
+              {form.domains.length > 1 && (
                 <Button type="button" variant="ghost" className="!px-3 !py-1.5 text-xs"
                   onClick={() => setForm({ ...form, domains: form.domains.slice(0, -1) })}>− Remove last</Button>
               )}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../api/client';
-import { Button, Input, Card } from '../components/ui';
+import { Button, PasswordInput, Card } from '../components/ui';
 
 export default function ResetPassword() {
   const [params] = useSearchParams();
@@ -32,12 +32,12 @@ export default function ResetPassword() {
       <Card className="w-full max-w-md p-8 animate-rise">
         <h1 className="font-display text-2xl text-navy-800">Choose a new password</h1>
         <form onSubmit={submit} className="mt-6 space-y-4">
-          <Input
-            id="password" label="New password (min 10 characters)" type="password" required minLength={10}
+          <PasswordInput
+            id="password" label="New password (min 10 characters)" required minLength={10}
             value={password} onChange={(e) => setPassword(e.target.value)}
           />
-          <Input
-            id="confirm" label="Confirm password" type="password" required
+          <PasswordInput
+            id="confirm" label="Confirm password" required
             value={confirm} onChange={(e) => setConfirm(e.target.value)}
           />
           {error && <p className="text-sm text-danger">{error}</p>}

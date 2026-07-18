@@ -32,8 +32,11 @@ export function JobTable({ jobs, showTailored = false, onDelete }) {
         </thead>
         <tbody>
           {jobs.map((job) => (
-            <tr key={job.id} className="border-b border-ivory-dark last:border-0 hover:bg-ivory/60 transition-colors">
-              <td className="px-6 py-3.5 font-semibold text-navy-800">{job.company}</td>
+            <tr key={job.id} className={`border-b border-ivory-dark last:border-0 transition-colors ${job.duplicateUrl ? 'bg-danger-soft/60 hover:bg-danger-soft' : 'hover:bg-ivory/60'}`}>
+              <td className="px-6 py-3.5 font-semibold text-navy-800">
+                {job.company}
+                {job.duplicateUrl && <Badge tone="danger">Duplicate URL</Badge>}
+              </td>
               <td className="px-4 py-3.5 text-ink">{job.jobTitle}</td>
               <td className="px-4 py-3.5 text-ink-soft whitespace-nowrap">{formatDate(job.applicationDate)}</td>
               <td className="px-4 py-3.5">

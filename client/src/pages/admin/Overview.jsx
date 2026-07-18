@@ -53,10 +53,11 @@ export default function AdminOverview() {
       {data && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <StatCard label="Active Clients" value={data.kpis.activeClients} delay={0} />
-            <StatCard label="Employees" value={data.kpis.activeEmployees} delay={1} />
-            <StatCard label="Jobs Logged Today" value={data.kpis.jobsToday} tone="gold" sub={`${data.kpis.jobsThisMonth} this month`} delay={2} />
+            <StatCard to="/admin/clients" label="Active Clients" value={data.kpis.activeClients} delay={0} />
+            <StatCard to="/admin/employees" label="Employees" value={data.kpis.activeEmployees} delay={1} />
+            <StatCard to="/admin/leaderboard" label="Jobs Logged Today" value={data.kpis.jobsToday} tone="gold" sub={`${data.kpis.jobsThisMonth} this month`} delay={2} />
             <StatCard
+              to="/admin/signups"
               label="Pending Sign-ups"
               value={data.kpis.pendingSignups ?? 0}
               tone={data.kpis.pendingSignups > 0 ? 'gold' : 'navy'}
@@ -64,6 +65,7 @@ export default function AdminOverview() {
               delay={3}
             />
             <StatCard
+              to="/admin/leads"
               label="New Leads"
               value={data.kpis.newLeads ?? 0}
               tone={data.kpis.newLeads > 0 ? 'gold' : 'navy'}
@@ -71,6 +73,7 @@ export default function AdminOverview() {
               delay={4}
             />
             <StatCard
+              to="/admin/clients?filter=expiring"
               label="Expiring ≤ 7 Days"
               value={data.kpis.expiringSoonCount}
               tone={data.kpis.expiringSoonCount > 0 ? 'alert' : 'navy'}
@@ -88,17 +91,17 @@ export default function AdminOverview() {
             ) : (
               <ul className="divide-y divide-ivory-dark">
                 {data.expiringSoon.map((c) => (
-                  <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                  <li key={c.id}>
+                    <Link to={`/admin/clients/${c.id}`} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 transition hover:bg-ivory/70">
                     <div>
-                      <Link to={`/admin/clients/${c.id}`} className="font-semibold text-navy-800 hover:text-gold-600">
-                        {c.fullName}
-                      </Link>
+                      <span className="font-semibold text-navy-800">{c.fullName}</span>
                       <div className="text-sm text-ink-soft">{c.packageType}</div>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-ink-soft">{formatDate(c.expiryDate)}</span>
                       <Badge tone="alert">⏳ {c.daysRemaining} day{c.daysRemaining === 1 ? '' : 's'} left</Badge>
                     </div>
+                    </Link>
                   </li>
                 ))}
               </ul>

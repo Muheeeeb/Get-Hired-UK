@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate.js';
 import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
 import { startOfMonth } from '../utils/dates.js';
+import { PACKAGES } from '../config/packages.js';
 
 const router = Router();
 
@@ -29,6 +30,11 @@ router.get('/stats', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+/** Package definitions — single source of truth for the landing page & portals. */
+router.get('/packages', (req, res) => {
+  res.json({ packages: PACKAGES });
 });
 
 // ---------- consultation requests (the landing page CTA) ----------

@@ -5,6 +5,54 @@ import { env } from '../config/env.js';
  * When no key is configured and MOCK_AI=true, produces a structured local draft
  * so the feature is demoable offline.
  */
+/**
+ * General document generator for the employee AI Studio.
+ * kind: 'cv' | 'cover_letter' | 'freeform'
+ */
+export async function generateDocument({ kind, prompt, clientName, domainName, masterText, referenceText }) {
+  const system =
+    kind === 'cv'
+      ? 'You are an expert UK CV writer. Produce a complete, well-structured CV in plain text (UK English): profile, key achievements, experience, education, skills. Quantify achievements. No placeholders — use the provided material.'
+      : kind === 'cover_letter'
+        ? 'You are an expert UK recruitment copywriter. Write a concise, professional cover letter (250-350 words, UK English). Return only the letter body.'
+        : 'You are an expert UK careers assistant helping a recruitment specialist draft documents. Follow the instructions precisely. UK English.';
+
+  const userContent = [
+    clientName ? `Candidate: ${clientName}` : '',
+    domainName ? `Career domain: ${domainName}` : '',
+    prompt ? `Instructions:\n${prompt}` : '',
+    masterText ? `Master document content:\n${masterText.slice(0, 6000)}` : '',
+    referenceText ? `Reference material:\n${referenceText.slice(0, 6000)}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  if (env.aiApiKey) {
+    const { default: OpenAI } = await import('openai');
+    const openai = new OpenAI({ apiKey: env.aiApiKey, baseURL: env.aiBaseUrl });
+    const completion = await openai.chat.completions.create({
+      model: env.aiModel,
+      temperature: 0.7,
+      max_tokens: 1500,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userContent },
+      ],
+    });
+    return { draft: completion.choices[0].message.content.trim(), source: 'ai' };
+  }
+
+  if (!env.mockAi) {
+    const err = new Error('AI assistant is not configured (set AI_API_KEY in server/.env)');
+    err.status = 503;
+    throw err;
+  }
+  return {
+    draft: `— AI draft (offline mode) —\n\n${userContent}\n\n(Configure AI_API_KEY for real generations.)`,
+    source: 'mock',
+  };
+}
+
 export async function draftCoverLetter({ clientName, jobTitle, company, domainName, masterCvText }) {
   if (env.aiApiKey) {
     const { default: OpenAI } = await import('openai');

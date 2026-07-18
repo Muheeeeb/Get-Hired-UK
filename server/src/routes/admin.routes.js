@@ -2,12 +2,19 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, authorizeRole } from '../middleware/auth.js';
+import { authenticate, authorizeRole, requireLead } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { todayISO, dateOnly, startOfWeek, startOfMonth, daysUntil } from '../utils/dates.js';
+import { todayISO, dateOnly, startOfWeek, startOfMonth, daysUntil, isoDaysFromNow } from '../utils/dates.js';
 import { runDailyPulse } from '../jobs/dailyPulse.js';
 import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
+import { activitySummary } from '../lib/sessions.js';
+import { PACKAGE_CHOICES } from '../config/packages.js';
+
+const domainsSchema = z
+  .array(z.string().min(2, 'Domain too short').max(2000, 'Domain too long (max 2000 chars)'))
+  .min(1, 'At least 1 domain required')
+  .max(10, 'At most 10 domains allowed');
 
 const router = Router();
 router.use(authenticate, authorizeRole(['admin']));
@@ -23,11 +30,12 @@ router.post(
       fullName: z.string().min(2).max(120),
       email: z.string().email().max(254),
       password: passwordSchema,
+      designation: z.string().max(120).optional().or(z.literal('')),
     })
   ),
   async (req, res, next) => {
     try {
-      const { fullName, email, password } = req.body;
+      const { fullName, email, password, designation } = req.body;
       const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
       if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
       const user = await prisma.user.create({
@@ -36,10 +44,110 @@ router.post(
           email: email.toLowerCase(),
           passwordHash: await bcrypt.hash(password, 12),
           role: 'employee',
+          designation: designation || null,
         },
-        select: { id: true, fullName: true, email: true, role: true, isActive: true, createdAt: true },
+        select: { id: true, fullName: true, email: true, role: true, isActive: true, designation: true, createdAt: true },
       });
       res.status(201).json({ employee: user });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/** Full employee profile: clients, per-client job counts, activity/working time. */
+router.get('/employees/:id', async (req, res, next) => {
+  try {
+    const employee = await prisma.user.findFirst({
+      where: { id: req.params.id, role: 'employee', deletedAt: null },
+      select: {
+        id: true, fullName: true, email: true, isActive: true, designation: true,
+        lastLoginAt: true, createdAt: true,
+      },
+    });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const monthStart = startOfMonth();
+    const today = dateOnly(todayISO());
+    const weekStart = startOfWeek();
+
+    const clients = await prisma.clientProfile.findMany({
+      where: { assignedEmployeeId: employee.id },
+      include: { user: { select: { fullName: true, email: true, isActive: true } } },
+    });
+    const perClient = await Promise.all(
+      clients.map(async (c) => {
+        const [monthCount, todayCount] = await Promise.all([
+          prisma.jobApplication.count({ where: { clientId: c.id, employeeId: employee.id, applicationDate: { gte: monthStart } } }),
+          prisma.jobApplication.count({ where: { clientId: c.id, employeeId: employee.id, applicationDate: { gte: today } } }),
+        ]);
+        return {
+          clientId: c.id,
+          fullName: c.user.fullName,
+          isActive: c.user.isActive,
+          packageType: c.packageType,
+          monthlyJobTarget: c.monthlyJobTarget,
+          monthApplied: monthCount,
+          todayApplied: todayCount,
+          targetMet: monthCount >= c.monthlyJobTarget,
+          percent: c.monthlyJobTarget ? Math.round((monthCount / c.monthlyJobTarget) * 100) : null,
+          daysRemaining: daysUntil(c.expiryDate),
+        };
+      })
+    );
+
+    const [jobsToday, jobsWeek, jobsMonth] = await Promise.all([
+      prisma.jobApplication.count({ where: { employeeId: employee.id, applicationDate: { gte: today } } }),
+      prisma.jobApplication.count({ where: { employeeId: employee.id, applicationDate: { gte: weekStart } } }),
+      prisma.jobApplication.count({ where: { employeeId: employee.id, applicationDate: { gte: monthStart } } }),
+    ]);
+
+    const activity = await activitySummary([employee.id], {
+      weekStart: new Date(Date.now() - 7 * 86400000),
+      dayStart: today,
+    });
+    const recentSessions = await prisma.userSession.findMany({
+      where: { userId: employee.id },
+      orderBy: { loginAt: 'desc' },
+      take: 10,
+    });
+
+    res.json({
+      employee,
+      clients: perClient,
+      totals: { jobsToday, jobsWeek, jobsMonth },
+      activity: activity[employee.id],
+      recentSessions,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Edit employee profile fields (designation, name). */
+router.put(
+  '/employees/:id',
+  validate(
+    z.object({
+      fullName: z.string().min(2).max(120).optional(),
+      designation: z.string().max(120).optional().or(z.literal('')),
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      const employee = await prisma.user.findFirst({
+        where: { id: req.params.id, role: 'employee', deletedAt: null },
+      });
+      if (!employee) return res.status(404).json({ error: 'Employee not found' });
+      const updated = await prisma.user.update({
+        where: { id: employee.id },
+        data: {
+          ...(req.body.fullName ? { fullName: req.body.fullName } : {}),
+          ...(req.body.designation !== undefined ? { designation: req.body.designation || null } : {}),
+        },
+        select: { id: true, fullName: true, designation: true },
+      });
+      res.json({ employee: updated });
     } catch (err) {
       next(err);
     }
@@ -89,11 +197,11 @@ const createClientSchema = z.object({
   fullName: z.string().min(2).max(120),
   email: z.string().email().max(254),
   password: passwordSchema,
-  packageType: z.string().min(2).max(80),
+  packageType: z.string().min(2).max(120),
   expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
-  monthlyJobTarget: z.number().int().min(1).max(500).default(40),
+  monthlyJobTarget: z.number().int().min(1).max(2000).default(40),
   assignedEmployeeId: z.string().uuid().optional(),
-  domains: z.array(z.string().min(2).max(80)).min(3, 'At least 3 domains required').max(5, 'At most 5 domains allowed').optional(),
+  domains: domainsSchema.optional(),
 });
 
 router.post('/clients', validate(createClientSchema), async (req, res, next) => {
@@ -148,7 +256,7 @@ router.get('/signups', async (req, res, next) => {
       where: { role: 'client', approvalStatus: status, deletedAt: null },
       select: {
         id: true, fullName: true, email: true, phone: true, signupNote: true,
-        approvalStatus: true, createdAt: true,
+        approvalStatus: true, emailVerifiedAt: true, createdAt: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -161,22 +269,29 @@ router.get('/signups', async (req, res, next) => {
   }
 });
 
+// All provisioning fields are OPTIONAL — the admin can approve immediately and
+// set package/domains later from the client edit page.
 const approveSchema = z.object({
-  packageType: z.string().min(2).max(80),
-  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
-  monthlyJobTarget: z.number().int().min(1).max(500).default(40),
-  assignedEmployeeId: z.string().uuid().optional(),
-  domains: z
-    .array(z.string().min(2).max(80))
-    .min(3, 'At least 3 domains required')
-    .max(5, 'At most 5 domains allowed')
-    .optional(),
+  packageType: z.string().min(2).max(120).optional().or(z.literal('')),
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').optional().or(z.literal('')),
+  monthlyJobTarget: z.number().int().min(1).max(2000).optional(),
+  assignedEmployeeId: z.string().uuid().optional().or(z.literal('')),
+  domains: domainsSchema.optional(),
 });
 
-/** Approve a pending sign-up AND provision the client's package/domains in one step. */
+/** Approve a pending sign-up; provisioning fields are optional (editable later). */
 router.put('/signups/:id/approve', validate(approveSchema), async (req, res, next) => {
   try {
-    const { packageType, expiryDate, monthlyJobTarget, assignedEmployeeId, domains } = req.body;
+    const {
+      packageType: rawPackage,
+      expiryDate: rawExpiry,
+      monthlyJobTarget = 40,
+      assignedEmployeeId: rawEmployee,
+      domains,
+    } = req.body;
+    const packageType = rawPackage || 'To be agreed';
+    const expiryDate = rawExpiry || isoDaysFromNow(30);
+    const assignedEmployeeId = rawEmployee || undefined;
     const user = await prisma.user.findFirst({
       where: { id: req.params.id, role: 'client', approvalStatus: 'pending', deletedAt: null },
       include: { clientProfile: true },
@@ -209,16 +324,26 @@ router.put('/signups/:id/approve', validate(approveSchema), async (req, res, nex
       });
     });
 
+    const portalUrl = `${env.clientOrigin.split(',')[0]}/login`;
     sendMail({
       to: user.email,
       subject: 'Your Get Hired UK account is approved 🎉',
       html: brandedEmail({
         heading: 'You’re all set',
-        bodyHtml: `<p>Hi ${user.fullName.split(' ')[0]},</p><p>Your account has been approved. You can now sign in and watch your search get underway.</p>`,
+        bodyHtml: `
+          <p>Hi ${user.fullName.split(' ')[0]},</p>
+          <p>Your account has been approved. Here's your account summary:</p>
+          <p style="background:#F7F6F2;border-radius:10px;padding:12px 16px;">
+            <strong>Package:</strong> ${packageType}<br />
+            <strong>Valid until:</strong> ${expiryDate}<br />
+            ${domains?.length ? `<strong>Career domains:</strong> ${domains.join(', ')}<br />` : ''}
+          </p>
+          <p><strong>Next steps:</strong> sign in to your portal to see your dashboard,
+          your master documents as they're prepared, and every application we file for you.</p>`,
         ctaLabel: 'Sign in to your portal',
-        ctaUrl: `${env.clientOrigin}/login`,
+        ctaUrl: portalUrl,
       }),
-      text: `Your Get Hired UK account is approved. Sign in: ${env.clientOrigin}/login`,
+      text: `Your Get Hired UK account is approved. Sign in: ${portalUrl}`,
     }).catch((err) => console.error('[approve] email failed:', err.message));
 
     res.json({ ok: true });
@@ -289,11 +414,7 @@ router.put(
 
 router.put(
   '/clients/:id/domains',
-  validate(
-    z.object({
-      domains: z.array(z.string().min(2).max(80)).min(3, 'At least 3 domains required').max(5, 'At most 5 domains allowed'),
-    })
-  ),
+  validate(z.object({ domains: domainsSchema })),
   async (req, res, next) => {
     try {
       const profile = await prisma.clientProfile.findUnique({
@@ -390,9 +511,20 @@ router.put(
 
 router.get('/leaderboard', async (req, res, next) => {
   try {
+    const isoRe = /^\d{4}-\d{2}-\d{2}$/;
     const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'today';
-    const from =
-      period === 'today' ? dateOnly(todayISO()) : period === 'week' ? startOfWeek() : startOfMonth();
+
+    // Optional historical range: ?from=YYYY-MM-DD&to=YYYY-MM-DD overrides period.
+    let from;
+    let to = null;
+    let effectivePeriod = period;
+    if (isoRe.test(req.query.from || '')) {
+      from = dateOnly(req.query.from);
+      to = isoRe.test(req.query.to || '') ? dateOnly(req.query.to) : dateOnly(todayISO());
+      effectivePeriod = 'range';
+    } else {
+      from = period === 'today' ? dateOnly(todayISO()) : period === 'week' ? startOfWeek() : startOfMonth();
+    }
 
     const employees = await prisma.user.findMany({
       where: { role: 'employee', deletedAt: null },
@@ -404,13 +536,18 @@ router.get('/leaderboard', async (req, res, next) => {
 
     const counts = await prisma.jobApplication.groupBy({
       by: ['employeeId'],
-      where: { applicationDate: { gte: from } },
+      where: { applicationDate: to ? { gte: from, lte: to } : { gte: from } },
       _count: { id: true },
     });
     const countMap = new Map(counts.map((c) => [c.employeeId, c._count.id]));
 
-    // Prorate each employee's monthly target down to the selected period.
-    const divisor = period === 'today' ? 22 : period === 'week' ? 4.33 : 1;
+    // Prorate each employee's monthly target down to the selected window.
+    const rangeDays = to ? Math.max(1, Math.round((to - from) / 86400000) + 1) : null;
+    const divisor =
+      effectivePeriod === 'today' ? 22
+      : effectivePeriod === 'week' ? 4.33
+      : effectivePeriod === 'range' ? Math.max(1, 30 / rangeDays)
+      : 1;
 
     const rows = employees
       .map((e) => {
@@ -502,6 +639,145 @@ router.get('/overview', async (req, res, next) => {
         daysRemaining: daysUntil(c.expiryDate),
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- package choices (single source of truth for dropdowns) ----------
+
+router.get('/package-choices', (req, res) => {
+  res.json({ choices: PACKAGE_CHOICES });
+});
+
+// ---------- multi-admin management (Admin Lead only) ----------
+
+router.get('/admins', requireLead, async (req, res, next) => {
+  try {
+    const admins = await prisma.user.findMany({
+      where: { role: 'admin', deletedAt: null },
+      select: {
+        id: true, fullName: true, email: true, isActive: true, isLead: true,
+        designation: true, lastLoginAt: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const activity = await activitySummary(admins.map((a) => a.id), {
+      weekStart: new Date(Date.now() - 7 * 86400000),
+      dayStart: dateOnly(todayISO()),
+    });
+    res.json({ admins: admins.map((a) => ({ ...a, activity: activity[a.id] })) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post(
+  '/admins',
+  requireLead,
+  validate(
+    z.object({
+      fullName: z.string().min(2).max(120),
+      email: z.string().email().max(254),
+      password: passwordSchema,
+      designation: z.string().max(120).optional().or(z.literal('')),
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      const existing = await prisma.user.findUnique({ where: { email: req.body.email.toLowerCase() } });
+      if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
+      const admin = await prisma.user.create({
+        data: {
+          fullName: req.body.fullName,
+          email: req.body.email.toLowerCase(),
+          passwordHash: await bcrypt.hash(req.body.password, 12),
+          role: 'admin',
+          isLead: false,
+          designation: req.body.designation || null,
+        },
+        select: { id: true, fullName: true, email: true, isActive: true, isLead: true },
+      });
+      res.status(201).json({ admin });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.put(
+  '/admins/:id/status',
+  requireLead,
+  validate(z.object({ isActive: z.boolean() })),
+  async (req, res, next) => {
+    try {
+      const target = await prisma.user.findFirst({
+        where: { id: req.params.id, role: 'admin', deletedAt: null },
+      });
+      if (!target) return res.status(404).json({ error: 'Admin not found' });
+      if (target.isLead) return res.status(400).json({ error: 'The Admin Lead account cannot be deactivated' });
+      if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot deactivate your own account' });
+      await prisma.$transaction([
+        prisma.user.update({ where: { id: target.id }, data: { isActive: req.body.isActive } }),
+        ...(req.body.isActive
+          ? []
+          : [
+              prisma.refreshToken.updateMany({
+                where: { userId: target.id, revokedAt: null },
+                data: { revokedAt: new Date() },
+              }),
+            ]),
+      ]);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.put(
+  '/admins/:id/password',
+  requireLead,
+  validate(z.object({ password: passwordSchema })),
+  async (req, res, next) => {
+    try {
+      const target = await prisma.user.findFirst({
+        where: { id: req.params.id, role: 'admin', deletedAt: null },
+      });
+      if (!target) return res.status(404).json({ error: 'Admin not found' });
+      if (target.isLead && target.id !== req.user.id) {
+        return res.status(400).json({ error: "The Admin Lead's password can only be changed by themselves" });
+      }
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: target.id },
+          data: { passwordHash: await bcrypt.hash(req.body.password, 12) },
+        }),
+        prisma.refreshToken.updateMany({
+          where: { userId: target.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        }),
+      ]);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/** Team activity: login status + working time of admins and employees (Lead only). */
+router.get('/activity', requireLead, async (req, res, next) => {
+  try {
+    const team = await prisma.user.findMany({
+      where: { role: { in: ['admin', 'employee'] }, deletedAt: null },
+      select: { id: true, fullName: true, role: true, designation: true, isActive: true, isLead: true, lastLoginAt: true },
+      orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+    });
+    const activity = await activitySummary(team.map((t) => t.id), {
+      weekStart: new Date(Date.now() - 7 * 86400000),
+      dayStart: dateOnly(todayISO()),
+    });
+    res.json({ team: team.map((t) => ({ ...t, activity: activity[t.id] })) });
   } catch (err) {
     next(err);
   }

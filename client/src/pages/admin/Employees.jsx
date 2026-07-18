@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Card, Skeleton, EmptyState, Badge, Button, Input, Modal } from '../../components/ui';
@@ -8,7 +9,8 @@ export default function AdminEmployees() {
   const [employees, setEmployees] = useState(null);
   const [error, setError] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ fullName: '', email: '', password: '' });
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', designation: '' });
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -26,7 +28,7 @@ export default function AdminEmployees() {
     try {
       await api.post('/admin/employees', form);
       setShowCreate(false);
-      setForm({ fullName: '', email: '', password: '' });
+      setForm({ fullName: '', email: '', password: '', designation: '' });
       load();
     } catch (err) {
       setFormError(errorMessage(err));
@@ -68,7 +70,8 @@ export default function AdminEmployees() {
                 </thead>
                 <tbody>
                   {employees.map((emp) => (
-                    <tr key={emp.id} className="border-b border-ivory-dark last:border-0">
+                    <tr key={emp.id} onClick={() => navigate(`/admin/employees/${emp.id}`)}
+                      className="cursor-pointer border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
                       <td className="px-6 py-3.5 font-semibold text-navy-800">{emp.fullName}</td>
                       <td className="px-4 py-3.5 text-ink-soft">{emp.email}</td>
                       <td className="px-4 py-3.5">{emp._count.assignedClients}</td>
@@ -78,7 +81,7 @@ export default function AdminEmployees() {
                           {emp.isActive ? '● Active' : '○ Deactivated'}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3.5 text-right">
+                      <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => toggleActive(emp)}>
                           {emp.isActive ? 'Deactivate' : 'Reactivate'}
                         </Button>
@@ -98,6 +101,8 @@ export default function AdminEmployees() {
             onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
           <Input id="email" label="Email" type="email" required value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <Input id="designation" label="Designation (optional)" value={form.designation}
+            onChange={(e) => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Recruitment Specialist" />
           <Input id="password" label="Temporary password (min 10 chars)" type="text" required minLength={10}
             value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           {formError && <p className="text-sm text-danger">{formError}</p>}

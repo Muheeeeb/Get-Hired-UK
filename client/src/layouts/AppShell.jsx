@@ -1,26 +1,35 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { api, errorMessage } from '../api/client';
-import { Button, Input, Modal } from '../components/ui';
+import { Button, Input, PasswordInput, Modal } from '../components/ui';
 
-const NAV = {
-  admin: [
-    { to: '/admin', label: 'Overview', icon: '◈', end: true },
-    { to: '/admin/clients', label: 'Clients', icon: '👤' },
-    { to: '/admin/employees', label: 'Employees', icon: '🧑‍💼' },
-    { to: '/admin/leaderboard', label: 'Leaderboard', icon: '🏆' },
-    { to: '/admin/signups', label: 'Sign-ups', icon: '✍️' },
-    { to: '/admin/leads', label: 'Leads', icon: '📥' },
-    { to: '/admin/resources', label: 'Prep Hub', icon: '🎓' },
-  ],
-  employee: [
-    { to: '/employee', label: 'My Clients', icon: '👤', end: true },
-  ],
-  client: [
+function navFor(user) {
+  if (user?.role === 'admin') {
+    return [
+      { to: '/admin', label: 'Overview', icon: '◈', end: true },
+      { to: '/admin/clients', label: 'Clients', icon: '👤' },
+      { to: '/admin/employees', label: 'Employees', icon: '🧑‍💼' },
+      { to: '/admin/leaderboard', label: 'Leaderboard', icon: '🏆' },
+      { to: '/admin/signups', label: 'Sign-ups', icon: '✍️' },
+      { to: '/admin/leads', label: 'Leads', icon: '📥' },
+      { to: '/admin/resources', label: 'Prep Hub', icon: '🎓' },
+      { to: '/admin/chat', label: 'Chat', icon: '💬', chat: true },
+      ...(user.isLead ? [{ to: '/admin/team', label: 'Team', icon: '🛡️' }] : []),
+    ];
+  }
+  if (user?.role === 'employee') {
+    return [
+      { to: '/employee', label: 'My Clients', icon: '👤', end: true },
+      { to: '/employee/ai-studio', label: 'AI Studio', icon: '✨' },
+      { to: '/employee/chat', label: 'Chat', icon: '💬', chat: true },
+    ];
+  }
+  return [
     { to: '/client', label: 'My Dashboard', icon: '◈', end: true },
-  ],
-};
+    { to: '/client/chat', label: 'Chat', icon: '💬', chat: true },
+  ];
+}
 
 function LogoChip({ size = 40 }) {
   return (
@@ -55,7 +64,22 @@ export function AppShell({ children, alertMode = false }) {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
-  const items = NAV[user?.role] || [];
+  const [unread, setUnread] = useState(0);
+  const items = navFor(user);
+
+  // Chat unread badge — light polling.
+  useEffect(() => {
+    if (!user) return;
+    let on = true;
+    const poll = () =>
+      api.get('/chat/unread-count').then((r) => on && setUnread(r.data.unread)).catch(() => {});
+    poll();
+    const id = setInterval(poll, 25_000);
+    return () => {
+      on = false;
+      clearInterval(id);
+    };
+  }, [user]);
 
   async function handleLogout() {
     await logout();
@@ -83,6 +107,11 @@ export function AppShell({ children, alertMode = false }) {
           >
             <span aria-hidden="true" className="text-base">{item.icon}</span>
             {item.label}
+            {item.chat && unread > 0 && (
+              <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-500 px-1.5 text-[11px] font-bold text-navy-900">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -163,6 +192,7 @@ function ChangePasswordModal({ open, onClose, user }) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [linkSent, setLinkSent] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -180,18 +210,48 @@ function ChangePasswordModal({ open, onClose, user }) {
     }
   }
 
+  async function emailResetLink() {
+    try {
+      await api.post('/auth/forgot-password', { email: user.email });
+    } finally {
+      setLinkSent(true);
+    }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Account">
-      <div className="mb-5 rounded-xl bg-ivory px-4 py-3 text-sm">
-        <div className="font-semibold text-navy-800">{user?.fullName}</div>
-        <div className="text-ink-soft">{user?.email} · <span className="capitalize">{user?.role}</span></div>
+      {/* Full account details */}
+      <div className="mb-5 space-y-1.5 rounded-xl bg-ivory px-4 py-3.5 text-sm">
+        <div className="flex justify-between gap-4">
+          <span className="text-ink-soft">Name</span>
+          <span className="font-semibold text-navy-800">{user?.fullName}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-ink-soft">Email</span>
+          <span className="font-medium text-navy-800">{user?.email}</span>
+        </div>
+        {user?.phone && (
+          <div className="flex justify-between gap-4">
+            <span className="text-ink-soft">Phone</span>
+            <span className="font-medium text-navy-800">{user.phone}</span>
+          </div>
+        )}
+        <div className="flex justify-between gap-4">
+          <span className="text-ink-soft">Role</span>
+          <span className="font-medium capitalize text-navy-800">
+            {user?.isLead ? 'Admin Lead' : user?.role}
+            {user?.designation ? ` · ${user.designation}` : ''}
+          </span>
+        </div>
       </div>
+
+      <p className="label-caps mb-3 text-navy-800/70">Change password</p>
       <form onSubmit={submit} className="space-y-4">
-        <Input id="cp-current" label="Current password" type="password" required autoComplete="current-password"
+        <PasswordInput id="cp-current" label="Current password" required autoComplete="current-password"
           value={current} onChange={(e) => setCurrent(e.target.value)} />
-        <Input id="cp-new" label="New password (min 10 characters)" type="password" required minLength={10}
+        <PasswordInput id="cp-new" label="New password (min 10 characters)" required minLength={10}
           autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-        <Input id="cp-confirm" label="Confirm new password" type="password" required autoComplete="new-password"
+        <PasswordInput id="cp-confirm" label="Confirm new password" required autoComplete="new-password"
           value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         {msg && (
           <p className={`text-sm ${msg.tone === 'ok' ? 'text-success' : 'text-danger'}`} role="status">
@@ -202,6 +262,13 @@ function ChangePasswordModal({ open, onClose, user }) {
           {busy ? 'Saving…' : 'Change password'}
         </Button>
       </form>
+
+      <div className="mt-4 border-t border-ivory-dark pt-4 text-center text-sm text-ink-soft">
+        Prefer email?{' '}
+        <button onClick={emailResetLink} disabled={linkSent} className="font-semibold text-gold-600 hover:underline disabled:opacity-60">
+          {linkSent ? 'Reset link sent to your inbox ✓' : 'Email me a secure reset link'}
+        </button>
+      </div>
     </Modal>
   );
 }

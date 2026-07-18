@@ -70,7 +70,7 @@ export default function ClientDetail() {
 
   async function saveDomains() {
     const domains = domainsDraft.map((d) => d.trim()).filter(Boolean);
-    if (domains.length < 3 || domains.length > 5) return flash('Domains must be 3–5');
+    if (domains.length < 1 || domains.length > 10) return flash('Please provide between 1 and 10 domains');
     try {
       await api.put(`/admin/clients/${id}/domains`, { domains });
       flash('Domains updated');
@@ -173,7 +173,7 @@ export default function ClientDetail() {
             </Card>
 
             <Card>
-              <CardHeader title="Domains (3–5)" subtitle="Career domains this client targets" />
+              <CardHeader title="Domains (1–10)" subtitle="Career domains this client targets — full sentences allowed" />
               <div className="space-y-2 p-6">
                 {domainsDraft.map((d, i) => (
                   <Input key={i} id={`dom-${i}`} value={d}
@@ -184,11 +184,11 @@ export default function ClientDetail() {
                     }} />
                 ))}
                 <div className="flex gap-2 pt-1">
-                  {domainsDraft.length < 5 && (
+                  {domainsDraft.length < 10 && (
                     <Button type="button" variant="ghost" className="!px-3 !py-1.5 text-xs"
                       onClick={() => setDomainsDraft([...domainsDraft, ''])}>+ Add</Button>
                   )}
-                  {domainsDraft.length > 3 && (
+                  {domainsDraft.length > 1 && (
                     <Button type="button" variant="ghost" className="!px-3 !py-1.5 text-xs"
                       onClick={() => setDomainsDraft(domainsDraft.slice(0, -1))}>− Remove last</Button>
                   )}

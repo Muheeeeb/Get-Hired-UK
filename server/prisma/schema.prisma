@@ -41,6 +41,10 @@ model User {
   approvalStatus ApprovalStatus @default(approved) @map("approval_status")
   phone        String?
   signupNote   String?   @map("signup_note")
+  designation  String?
+  // The Admin Lead can manage other admins and audit activity/chats.
+  isLead       Boolean   @default(false) @map("is_lead")
+  emailVerifiedAt DateTime? @map("email_verified_at")
   lastLoginAt  DateTime? @map("last_login_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -54,8 +58,121 @@ model User {
   interviewResources InterviewResource[] @relation("ResourceCreator")
   refreshTokens      RefreshToken[]
   passwordResets     PasswordResetToken[]
+  emailVerifications EmailVerificationToken[]
+  sessions           UserSession[]
+  sentMessages       Message[]            @relation("MessageSender")
+  conversationsCreated Conversation[]     @relation("ConversationCreator")
+  conversationsAsClient Conversation[]    @relation("ConversationClient")
+  conversationsAssigned Conversation[]    @relation("ConversationAssignee")
+  interviewSessionsCreated InterviewSession[] @relation("SessionCreator")
+  interviewSessionsAssigned InterviewSession[] @relation("SessionAssignee")
 
   @@map("users")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
+}
+
+/// Login/working-time tracking: one row per sign-in; lastSeenAt is bumped by a
+/// heartbeat while the user works, so (lastSeenAt - loginAt) ≈ session length.
+model UserSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  loginAt    DateTime  @default(now()) @map("login_at")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  logoutAt   DateTime? @map("logout_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loginAt])
+  @@map("user_sessions")
+}
+
+enum ConversationStatus {
+  open
+  closed
+}
+
+model Conversation {
+  id                 String             @id @default(uuid()) @db.Uuid
+  subject            String
+  createdById        String             @map("created_by") @db.Uuid
+  // The client participant (users.id), when the thread involves a client.
+  clientUserId       String?            @map("client_user_id") @db.Uuid
+  // When assigned, only this employee (plus admins) may reply.
+  assignedEmployeeId String?            @map("assigned_employee_id") @db.Uuid
+  status             ConversationStatus @default(open)
+  lastMessageAt      DateTime           @default(now()) @map("last_message_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+
+  createdBy        User               @relation("ConversationCreator", fields: [createdById], references: [id])
+  clientUser       User?              @relation("ConversationClient", fields: [clientUserId], references: [id])
+  assignedEmployee User?              @relation("ConversationAssignee", fields: [assignedEmployeeId], references: [id])
+  messages         Message[]
+  reads            ConversationRead[]
+
+  @@index([clientUserId])
+  @@index([assignedEmployeeId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  senderId       String   @map("sender_id") @db.Uuid
+  body           String?
+  fileKey        String?  @map("file_key")
+  fileName       String?  @map("file_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("MessageSender", fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model ConversationRead {
+  conversationId String   @map("conversation_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  lastReadAt     DateTime @default(now()) @map("last_read_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@map("conversation_reads")
+}
+
+/// Scheduled interview-prep sessions, visible to the client and the assigned employee.
+model InterviewSession {
+  id                 String    @id @default(uuid()) @db.Uuid
+  clientId           String    @map("client_id") @db.Uuid
+  title              String
+  scheduledAt        DateTime  @map("scheduled_at")
+  joinLink           String?   @map("join_link")
+  notes              String?
+  fileKey            String?   @map("file_key")
+  fileName           String?   @map("file_name")
+  assignedEmployeeId String?   @map("assigned_employee_id") @db.Uuid
+  createdById        String    @map("created_by") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  client           ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignedEmployee User?         @relation("SessionAssignee", fields: [assignedEmployeeId], references: [id])
+  createdBy        User          @relation("SessionCreator", fields: [createdById], references: [id])
+
+  @@index([clientId, scheduledAt])
+  @@map("interview_sessions")
 }
 
 model ClientProfile {
@@ -72,9 +189,10 @@ model ClientProfile {
 
   user             User             @relation("ClientUser", fields: [userId], references: [id])
   assignedEmployee User?            @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
-  domains          Domain[]
-  jobApplications  JobApplication[]
-  dailyPulseLogs   DailyPulseLog[]
+  domains           Domain[]
+  jobApplications   JobApplication[]
+  dailyPulseLogs    DailyPulseLog[]
+  interviewSessions InterviewSession[]
 
   @@map("client_profiles")
 }

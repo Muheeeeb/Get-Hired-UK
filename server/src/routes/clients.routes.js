@@ -192,7 +192,12 @@ router.get('/:id/jobs', loadClientScope, async (req, res, next) => {
       });
     }
 
-    res.json({ jobs });
+    // Flag duplicate job URLs for the team view (allowed, but highlighted red).
+    const urlCounts = new Map();
+    for (const j of jobs) urlCounts.set(j.jobUrl, (urlCounts.get(j.jobUrl) || 0) + 1);
+    res.json({
+      jobs: jobs.map((j) => ({ ...j, duplicateUrl: urlCounts.get(j.jobUrl) > 1 })),
+    });
   } catch (err) {
     next(err);
   }

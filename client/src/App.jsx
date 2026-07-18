@@ -3,6 +3,11 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import VerifyEmail from './pages/VerifyEmail';
+import Chat from './pages/Chat';
+import Team from './pages/admin/Team';
+import EmployeeDetail from './pages/admin/EmployeeDetail';
+import AIStudio from './pages/employee/AIStudio';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import AdminOverview from './pages/admin/Overview';
@@ -45,6 +50,7 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
@@ -55,12 +61,18 @@ export default function App() {
           <Route path="/admin/leaderboard" element={<Protected roles={['admin']}><AdminLeaderboard /></Protected>} />
           <Route path="/admin/resources" element={<Protected roles={['admin']}><AdminResources /></Protected>} />
           <Route path="/admin/leads" element={<Protected roles={['admin']}><AdminLeads /></Protected>} />
+          <Route path="/admin/team" element={<Protected roles={['admin']}><Team /></Protected>} />
+          <Route path="/admin/chat" element={<Protected roles={['admin']}><Chat /></Protected>} />
+          <Route path="/admin/employees/:id" element={<Protected roles={['admin']}><EmployeeDetail /></Protected>} />
           <Route path="/admin/signups" element={<Protected roles={['admin']}><AdminSignups /></Protected>} />
 
           <Route path="/employee" element={<Protected roles={['employee', 'admin']}><MyClients /></Protected>} />
           <Route path="/employee/clients/:id" element={<Protected roles={['employee', 'admin']}><ClientWorkspace /></Protected>} />
+          <Route path="/employee/ai-studio" element={<Protected roles={['employee', 'admin']}><AIStudio /></Protected>} />
+          <Route path="/employee/chat" element={<Protected roles={['employee']}><Chat /></Protected>} />
 
           <Route path="/client" element={<Protected roles={['client']}><ClientDashboard /></Protected>} />
+          <Route path="/client/chat" element={<Protected roles={['client']}><Chat /></Protected>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

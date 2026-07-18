@@ -15,6 +15,34 @@ import {
 } from '../lib/tokens.js';
 import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
+import { startSession, endSession } from '../lib/sessions.js';
+
+function hashToken(raw) {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+async function sendVerificationEmail(user) {
+  const raw = crypto.randomBytes(32).toString('base64url');
+  await prisma.emailVerificationToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashToken(raw),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
+  const link = `${env.clientOrigin.split(',')[0]}/verify-email?token=${raw}`;
+  await sendMail({
+    to: user.email,
+    subject: 'Verify your email — Get Hired UK',
+    html: brandedEmail({
+      heading: 'Verify your email',
+      bodyHtml: `<p>Hi ${user.fullName.split(' ')[0]},</p><p>Please confirm your email address to complete your registration. This link expires in 24 hours.</p>`,
+      ctaLabel: 'Verify my email',
+      ctaUrl: link,
+    }),
+    text: `Verify your email: ${link}`,
+  });
+}
 
 const router = Router();
 
@@ -50,15 +78,23 @@ router.post('/login', loginLimiter, validate(loginSchema), async (req, res, next
       });
     }
     if (!user.isActive) return res.status(403).json({ error: 'This account has been deactivated' });
+    // Email verification gate (only enforced when the app can actually send email).
+    if (user.role === 'client' && !user.emailVerifiedAt && env.smtp.host) {
+      return res.status(403).json({
+        error: 'Please verify your email first — check your inbox for the verification link.',
+        code: 'EMAIL_UNVERIFIED',
+      });
+    }
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    startSession(user.id);
     const accessToken = signAccessToken(user);
     const { raw: refreshToken } = await issueRefreshToken(user.id);
 
     res.cookie('refresh_token', refreshToken, refreshCookieOptions);
     res.json({
       accessToken,
-      user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role },
+      user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, isLead: user.isLead, phone: user.phone, designation: user.designation },
     });
   } catch (err) {
     next(err);
@@ -98,7 +134,7 @@ router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, n
       });
     }
 
-    await prisma.user.create({
+    const created = await prisma.user.create({
       data: {
         fullName,
         email: lower,
@@ -107,8 +143,17 @@ router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, n
         approvalStatus: 'pending',
         phone: phone || null,
         signupNote: note || null,
+        // Without a mail transport a verification email can never arrive, so
+        // auto-verify to avoid locking users out; enforce only when SMTP is set.
+        emailVerifiedAt: env.smtp.host ? null : new Date(),
       },
     });
+
+    if (env.smtp.host) {
+      sendVerificationEmail(created).catch((err) =>
+        console.error('[signup] verification email failed:', err.message)
+      );
+    }
 
     // Notify the office; never fail the request if mail transport is down.
     sendMail({
@@ -126,12 +171,64 @@ router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, n
 
     res.status(201).json({
       ok: true,
-      message: 'Thanks for registering! Your account is awaiting approval — we will email you once it is activated.',
+      verifyRequired: Boolean(env.smtp.host),
+      message: env.smtp.host
+        ? 'Thanks for registering! Please verify your email, then wait for admin approval.'
+        : 'Thanks for registering! Your account is awaiting approval — we will email you once it is activated.',
     });
   } catch (err) {
     next(err);
   }
 });
+
+/** Email verification (link from the signup email). */
+router.post(
+  '/verify-email',
+  validate(z.object({ token: z.string().min(10).max(500) })),
+  async (req, res, next) => {
+    try {
+      const record = await prisma.emailVerificationToken.findUnique({
+        where: { tokenHash: hashToken(req.body.token) },
+      });
+      if (!record || record.usedAt || record.expiresAt < new Date()) {
+        return res.status(400).json({ error: 'This verification link is invalid or has expired.' });
+      }
+      await prisma.$transaction([
+        prisma.emailVerificationToken.update({
+          where: { id: record.id },
+          data: { usedAt: new Date() },
+        }),
+        prisma.user.update({
+          where: { id: record.userId },
+          data: { emailVerifiedAt: new Date() },
+        }),
+      ]);
+      res.json({ ok: true, message: 'Email verified — you can sign in once your account is approved.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+const resendLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 3, legacyHeaders: false });
+
+router.post(
+  '/resend-verification',
+  resendLimiter,
+  validate(z.object({ email: z.string().email() })),
+  async (req, res, next) => {
+    try {
+      const user = await prisma.user.findUnique({ where: { email: req.body.email.toLowerCase() } });
+      if (user && !user.emailVerifiedAt && env.smtp.host) {
+        sendVerificationEmail(user).catch(() => {});
+      }
+      // Same response either way — no account enumeration.
+      res.json({ ok: true, message: 'If that account needs verification, a new link is on its way.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 router.post('/refresh', async (req, res, next) => {
   try {
@@ -152,7 +249,7 @@ router.post('/refresh', async (req, res, next) => {
     res.cookie('refresh_token', rotated.raw, refreshCookieOptions);
     res.json({
       accessToken: signAccessToken(user),
-      user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role },
+      user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, isLead: user.isLead, phone: user.phone, designation: user.designation },
     });
   } catch (err) {
     next(err);
@@ -161,7 +258,16 @@ router.post('/refresh', async (req, res, next) => {
 
 router.post('/logout', async (req, res, next) => {
   try {
-    await revokeRefreshToken(req.cookies?.refresh_token);
+    // Best-effort: close the working-time session for whoever this token belongs to.
+    const raw = req.cookies?.refresh_token;
+    if (raw) {
+      const record = await prisma.refreshToken.findUnique({
+        where: { tokenHash: hashToken(raw) },
+        select: { userId: true },
+      });
+      if (record) endSession(record.userId);
+    }
+    await revokeRefreshToken(raw);
     res.clearCookie('refresh_token', { ...refreshCookieOptions, maxAge: undefined });
     res.json({ ok: true });
   } catch (err) {
@@ -170,8 +276,8 @@ router.post('/logout', async (req, res, next) => {
 });
 
 router.get('/me', authenticate, (req, res) => {
-  const { id, fullName, email, role } = req.user;
-  res.json({ user: { id, fullName, email, role } });
+  const { id, fullName, email, role, phone, designation, isLead, createdAt } = req.user;
+  res.json({ user: { id, fullName, email, role, phone, designation, isLead, createdAt } });
 });
 
 router.post(

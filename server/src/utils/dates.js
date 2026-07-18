@@ -30,6 +30,13 @@ export function startOfWeek() {
   return d;
 }
 
+/** 'YYYY-MM-DD' N days from today (business timezone). */
+export function isoDaysFromNow(days) {
+  const d = dateOnly(todayISO());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Whole days from today (business tz) until the given date. Negative = expired. */
 export function daysUntil(date) {
   const today = dateOnly(todayISO());

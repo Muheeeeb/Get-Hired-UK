@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/client';
-import { Button, Input, Spinner } from '../components/ui';
+import { Button, Input, PasswordInput, Spinner } from '../components/ui';
 
 export default function Signup() {
   const [form, setForm] = useState({ fullName: '', email: '', password: '', confirm: '', phone: '', note: '' });
@@ -96,9 +96,9 @@ export default function Signup() {
               <Input id="phone" label="Phone (optional)" autoComplete="tel"
                 value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+44 …" />
               <div className="grid gap-4 sm:grid-cols-2">
-                <Input id="password" label="Password (min 10)" type="password" required minLength={10} autoComplete="new-password"
+                <PasswordInput id="password" label="Password (min 10)" required minLength={10} autoComplete="new-password"
                   value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••••" />
-                <Input id="confirm" label="Confirm" type="password" required autoComplete="new-password"
+                <PasswordInput id="confirm" label="Confirm" required autoComplete="new-password"
                   value={form.confirm} onChange={(e) => set('confirm', e.target.value)} placeholder="••••••••••" />
               </div>
               <label className="block">

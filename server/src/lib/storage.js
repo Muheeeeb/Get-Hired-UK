@@ -49,11 +49,12 @@ async function localSave(key, buffer) {
   await fs.writeFile(filePath, buffer);
 }
 
-function localSignedUrl(key, fileName = '') {
+function localSignedUrl(key, fileName = '', inline = false) {
   const expires = Math.floor(Date.now() / 1000) + env.signedUrlTtlSeconds;
   const sig = localSignature(key, expires, fileName);
   const namePart = fileName ? `&name=${encodeURIComponent(fileName)}` : '';
-  return `${env.appBaseUrl}/files/local/${encodeURIComponent(key)}?expires=${expires}&sig=${sig}${namePart}`;
+  const inlinePart = inline ? '&inline=1' : '';
+  return `${env.appBaseUrl}/files/local/${encodeURIComponent(key)}?expires=${expires}&sig=${sig}${namePart}${inlinePart}`;
 }
 
 export function resolveLocalPath(key) {
@@ -84,15 +85,36 @@ async function s3Save(key, buffer, contentType) {
   );
 }
 
-async function s3SignedUrl(key, fileName = '') {
+const INLINE_TYPES = {
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+};
+
+/** Browsers can render these inline — "View" opens them instead of downloading. */
+export function inlineContentType(name = '') {
+  const ext = path.extname(name).toLowerCase();
+  return INLINE_TYPES[ext] || null;
+}
+
+async function s3SignedUrl(key, fileName = '', inline = false) {
   const { GetObjectCommand } = await import('@aws-sdk/client-s3');
   const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
   const client = await getS3();
+  const safeName = fileName.replace(/["\\\r\n]/g, '_');
+  const contentType = inline ? inlineContentType(fileName || key) : null;
   const command = new GetObjectCommand({
     Bucket: env.aws.bucket,
     Key: key,
     ...(fileName
-      ? { ResponseContentDisposition: `attachment; filename="${fileName.replace(/["\\\r\n]/g, '_')}"` }
+      ? {
+          ResponseContentDisposition: `${contentType ? 'inline' : 'attachment'}; filename="${safeName}"`,
+          ...(contentType ? { ResponseContentType: contentType } : {}),
+        }
       : {}),
   });
   return getSignedUrl(client, command, { expiresIn: env.signedUrlTtlSeconds });
@@ -105,9 +127,9 @@ export async function saveFile(key, buffer, contentType) {
   return localSave(key, buffer);
 }
 
-export async function getSignedFileUrl(key, fileName = '') {
-  if (env.storageDriver === 's3') return s3SignedUrl(key, fileName);
-  return localSignedUrl(key, fileName);
+export async function getSignedFileUrl(key, fileName = '', { inline = false } = {}) {
+  if (env.storageDriver === 's3') return s3SignedUrl(key, fileName, inline);
+  return localSignedUrl(key, fileName, inline);
 }
 
 /** Best-effort object removal — callers must not fail their request on error. */

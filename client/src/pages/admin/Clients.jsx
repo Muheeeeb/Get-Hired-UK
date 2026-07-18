@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Card, Skeleton, EmptyState, Badge, Button, Input, Select, Modal } from '../../components/ui';
@@ -11,7 +11,11 @@ const EMPTY_FORM = {
 };
 
 export default function AdminClients() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const filter = params.get('filter');
   const [clients, setClients] = useState(null);
+  const [packageChoices, setPackageChoices] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [error, setError] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -24,8 +28,13 @@ export default function AdminClients() {
       .then((res) => setClients(res.data.clients))
       .catch((err) => setError(errorMessage(err)));
     api.get('/admin/employees').then((res) => setEmployees(res.data.employees));
+    api.get('/admin/package-choices').then((res) => setPackageChoices(res.data.choices)).catch(() => {});
   }
   useEffect(load, []);
+
+  const visibleClients = clients?.filter((c) =>
+    filter === 'expiring' ? c.daysRemaining <= 7 && c.daysRemaining >= 0 : true
+  );
 
   function setDomain(i, value) {
     const domains = [...form.domains];
@@ -37,7 +46,7 @@ export default function AdminClients() {
     e.preventDefault();
     setFormError(null);
     const domains = form.domains.map((d) => d.trim()).filter(Boolean);
-    if (domains.length < 3) return setFormError('Please enter at least 3 domains');
+    if (domains.length < 1) return setFormError('Please enter at least 1 domain');
     setBusy(true);
     try {
       await api.post('/admin/clients', {
@@ -64,14 +73,14 @@ export default function AdminClients() {
     <AppShell>
       <PageHeader
         title="Clients"
-        subtitle="Every client, every package, every deadline"
+        subtitle={filter === 'expiring' ? 'Filtered: packages expiring within 7 days' : 'Every client, every package, every deadline'}
         action={<Button onClick={() => setShowCreate(true)}>+ New client</Button>}
       />
       {error && <EmptyState icon="⚠️" title="Failed to load" hint={error} />}
       {!clients && !error && <Skeleton className="h-64 rounded-2xl" />}
       {clients && (
         <Card className="animate-rise">
-          {clients.length === 0 ? (
+          {visibleClients.length === 0 ? (
             <EmptyState icon="👤" title="No clients yet" hint="Create your first client to get started." />
           ) : (
             <div className="overflow-x-auto">
@@ -86,12 +95,11 @@ export default function AdminClients() {
                   </tr>
                 </thead>
                 <tbody>
-                  {clients.map((c) => (
-                    <tr key={c.id} className="border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
+                  {visibleClients.map((c) => (
+                    <tr key={c.id} onClick={() => navigate(`/admin/clients/${c.id}`)}
+                      className="cursor-pointer border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
                       <td className="px-6 py-3.5">
-                        <Link to={`/admin/clients/${c.id}`} className="font-semibold text-navy-800 hover:text-gold-600">
-                          {c.user.fullName}
-                        </Link>
+                        <span className="font-semibold text-navy-800">{c.user.fullName}</span>
                         <div className="text-xs text-ink-soft">{c.user.email}</div>
                       </td>
                       <td className="px-4 py-3.5 text-ink-soft">{c.packageType}</td>
@@ -128,8 +136,13 @@ export default function AdminClients() {
           <Input id="c-pass" label="Temporary password (min 10 chars)" type="text" required minLength={10}
             value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <div className="grid gap-4 sm:grid-cols-3">
-            <Input id="c-package" label="Package type" required value={form.packageType}
-              onChange={(e) => setForm({ ...form, packageType: e.target.value })} />
+            <div>
+              <Input id="c-package" label="Package type" required list="package-options" value={form.packageType}
+                onChange={(e) => setForm({ ...form, packageType: e.target.value })} />
+              <datalist id="package-options">
+                {packageChoices.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
             <Input id="c-expiry" label="Expiry date" type="date" required value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             <Input id="c-target" label="Monthly job target" type="number" min={1} max={500} required
@@ -145,7 +158,7 @@ export default function AdminClients() {
           </Select>
 
           <div>
-            <span className="label-caps text-navy-800/70 block mb-1.5">Domains (3–5)</span>
+            <span className="label-caps text-navy-800/70 block mb-1.5">Domains (1–10 — full sentences allowed)</span>
             <div className="space-y-2">
               {form.domains.map((d, i) => (
                 <Input key={i} id={`domain-${i}`} placeholder={`Domain ${i + 1} — e.g. Software Engineer`}
@@ -153,13 +166,13 @@ export default function AdminClients() {
               ))}
             </div>
             <div className="mt-2 flex gap-2">
-              {form.domains.length < 5 && (
+              {form.domains.length < 10 && (
                 <Button type="button" variant="ghost" className="!px-3 !py-1.5 text-xs"
                   onClick={() => setForm({ ...form, domains: [...form.domains, ''] })}>
                   + Add domain
                 </Button>
               )}
-              {form.domains.length > 3 && (
+              {form.domains.length > 1 && (
                 <Button type="button" variant="ghost" className="!px-3 !py-1.5 text-xs"
                   onClick={() => setForm({ ...form, domains: form.domains.slice(0, -1) })}>
                   − Remove last

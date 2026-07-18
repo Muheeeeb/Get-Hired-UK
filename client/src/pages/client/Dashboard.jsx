@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AppShell } from '../../layouts/AppShell';
@@ -10,6 +11,8 @@ import { DownloadButton, formatDate } from '../../components/files';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [prepSessions, setPrepSessions] = useState([]);
   const [data, setData] = useState(null);
   const [jobs, setJobs] = useState(null);
   const [resources, setResources] = useState(null);
@@ -28,6 +31,7 @@ export default function ClientDashboard() {
         ]);
         setJobs(jobsRes.jobs);
         setResources(resRes.resources);
+        api.get('/interview-sessions').then((r) => setPrepSessions(r.data.sessions)).catch(() => {});
       } catch (err) {
         setError(errorMessage(err));
       }
@@ -66,7 +70,13 @@ export default function ClientDashboard() {
                   </div>
                 </div>
               </div>
-              <Button variant="alert" onClick={() => window.open('mailto:Career@gethired.world?subject=Package renewal', '_blank')}>
+              <Button variant="alert" onClick={async () => {
+                try {
+                  await api.post('/chat/renewal');
+                } finally {
+                  navigate('/client/chat');
+                }
+              }}>
                 Renew now →
               </Button>
             </div>
@@ -155,6 +165,33 @@ export default function ClientDashboard() {
             {/* Interview Prep Hub */}
             <Card className="animate-rise animate-rise-3">
               <CardHeader title="Interview Preparation Hub" subtitle="Guides and tips from our coaches" />
+              {prepSessions.filter((s) => s.upcoming).length > 0 && (
+                <div className="border-b border-ivory-dark bg-gold-100/40 px-6 py-4">
+                  <p className="label-caps text-navy-800/70">Your upcoming prep sessions</p>
+                  <ul className="mt-2 space-y-2">
+                    {prepSessions.filter((s) => s.upcoming).map((s) => (
+                      <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-4 py-3 shadow-sm">
+                        <div>
+                          <div className="font-semibold text-navy-800">{s.title}</div>
+                          <div className="text-xs text-ink-soft">
+                            {new Date(s.scheduledAt).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          {s.notes && <div className="mt-0.5 text-xs text-ink">{s.notes}</div>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {s.hasFile && <DownloadButton docId={s.id} label="Prep files" />}
+                          {s.joinLink && (
+                            <a href={s.joinLink} target="_blank" rel="noopener noreferrer"
+                              className="rounded-lg bg-navy-800 px-3 py-1.5 text-xs font-semibold text-ivory hover:bg-navy-700">
+                              Join session ↗
+                            </a>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {!resources ? (
                 <div className="p-6 space-y-3">
                   <Skeleton className="h-16" /><Skeleton className="h-16" />
