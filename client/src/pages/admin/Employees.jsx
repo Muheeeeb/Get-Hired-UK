@@ -42,6 +42,19 @@ export default function AdminEmployees() {
     load();
   }
 
+  async function deleteEmployee(emp) {
+    const typed = window.prompt(
+      `PERMANENTLY delete ${emp.fullName}? This frees their email (${emp.email}) for reuse and cannot be undone.\n\nType DELETE to confirm:`
+    );
+    if (typed !== 'DELETE') return;
+    try {
+      await api.delete(`/admin/employees/${emp.id}`);
+      load();
+    } catch (err) {
+      alert(errorMessage(err));
+    }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -82,9 +95,14 @@ export default function AdminEmployees() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => toggleActive(emp)}>
-                          {emp.isActive ? 'Deactivate' : 'Reactivate'}
-                        </Button>
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => toggleActive(emp)}>
+                            {emp.isActive ? 'Deactivate' : 'Reactivate'}
+                          </Button>
+                          <Button variant="ghost" className="!px-3 !py-1.5 text-xs !text-danger !border-danger/30" onClick={() => deleteEmployee(emp)}>
+                            Delete
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

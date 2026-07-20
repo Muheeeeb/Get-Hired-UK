@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Button, Input, PasswordInput, Spinner } from '../components/ui';
-import { api, errorMessage } from '../api/client';
+import { api, errorMessage, takeSignoutReason } from '../api/client';
 
 const HOME = { admin: '/admin', employee: '/employee', client: '/client' };
 
@@ -15,6 +15,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [unverified, setUnverified] = useState(false);
   const [resent, setResent] = useState(false);
+  const [notice, setNotice] = useState(() => takeSignoutReason());
 
   async function submit(e) {
     e.preventDefault();
@@ -74,6 +75,12 @@ export default function Login() {
         <form onSubmit={submit} className="w-full max-w-sm animate-rise">
           <h2 className="font-display text-3xl text-navy-800">Welcome back</h2>
           <p className="mt-1.5 text-sm text-ink-soft">Sign in to your portal</p>
+
+          {notice && (
+            <div className="mt-4 rounded-xl bg-gold-100 px-4 py-3 text-sm text-navy-800" role="status">
+              {notice}
+            </div>
+          )}
 
           <div className="mt-8 space-y-4">
             <Input

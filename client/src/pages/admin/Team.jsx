@@ -79,6 +79,20 @@ export default function Team() {
     }
   }
 
+  async function deleteAdmin(admin) {
+    const typed = window.prompt(
+      `PERMANENTLY delete admin ${admin.fullName}? This frees their email (${admin.email}) for reuse and cannot be undone.\n\nType DELETE to confirm:`
+    );
+    if (typed !== 'DELETE') return;
+    try {
+      await api.delete(`/admin/admins/${admin.id}`);
+      flash(`${admin.fullName} deleted`);
+      load();
+    } catch (err) {
+      flash(errorMessage(err));
+    }
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -130,9 +144,13 @@ export default function Team() {
                           <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => setResetTarget(a)}>
                             Reset password
                           </Button>
-                          <Button variant="ghost" className={`!px-3 !py-1.5 text-xs ${a.isActive ? '!text-danger !border-danger/30' : ''}`}
+                          <Button variant="ghost" className={`!px-3 !py-1.5 text-xs ${a.isActive ? '!text-alert !border-alert/30' : ''}`}
                             onClick={() => toggle(a)}>
                             {a.isActive ? 'Deactivate' : 'Reactivate'}
+                          </Button>
+                          <Button variant="ghost" className="!px-3 !py-1.5 text-xs !text-danger !border-danger/30"
+                            onClick={() => deleteAdmin(a)}>
+                            Delete
                           </Button>
                         </div>
                       )}

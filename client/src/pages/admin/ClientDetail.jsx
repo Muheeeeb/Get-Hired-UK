@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select } from '../../components/ui';
@@ -10,6 +10,7 @@ import { LinkedInStepper } from '../../components/LinkedInStepper';
 /** Admin client detail — sees everything: package, domains, masters, jobs + tailored files. */
 export default function ClientDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [dash, setDash] = useState(null);
   const [jobs, setJobs] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -115,6 +116,24 @@ export default function ClientDetail() {
                 <Link to={`/employee/clients/${id}`}>
                   <Button variant="navy">Open workspace →</Button>
                 </Link>
+                <Button
+                  variant="ghost"
+                  className="!text-danger !border-danger/30"
+                  onClick={async () => {
+                    const typed = window.prompt(
+                      `PERMANENTLY delete ${dash.client.fullName} and ALL their data (documents, job history, chats)? This frees their email (${dash.client.email}) for reuse and cannot be undone.\n\nType DELETE to confirm:`
+                    );
+                    if (typed !== 'DELETE') return;
+                    try {
+                      await api.delete(`/admin/clients/${id}`);
+                      navigate('/admin/clients');
+                    } catch (err) {
+                      flash(errorMessage(err));
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
               </div>
             }
           />

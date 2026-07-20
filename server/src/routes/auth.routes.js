@@ -30,7 +30,7 @@ async function sendVerificationEmail(user) {
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
   });
-  const link = `${env.clientOrigin.split(',')[0]}/verify-email?token=${raw}`;
+  const link = `${env.primaryClientOrigin}/verify-email?token=${raw}`;
   await sendMail({
     to: user.email,
     subject: 'Verify your email — Get Hired UK',
@@ -332,7 +332,7 @@ router.post(
             expiresAt: new Date(Date.now() + 30 * 60 * 1000),
           },
         });
-        const url = `${env.clientOrigin}/reset-password?token=${raw}`;
+        const url = `${env.primaryClientOrigin}/reset-password?token=${raw}`;
         await sendMail({
           to: user.email,
           subject: 'Reset your Get Hired UK password',

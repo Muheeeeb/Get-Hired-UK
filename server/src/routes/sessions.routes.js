@@ -78,7 +78,7 @@ router.post('/', authorizeRole(['admin']), upload.single('file'), async (req, re
           </p>
           <p>Details and any prep materials are on your dashboard.</p>`,
         ctaLabel: 'Open my dashboard',
-        ctaUrl: env.clientOrigin.split(',')[0],
+        ctaUrl: env.primaryClientOrigin,
       }),
       text: `Interview prep session: ${title} at ${scheduledAt}`,
     }).catch(() => {});

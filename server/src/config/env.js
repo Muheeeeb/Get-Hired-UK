@@ -16,6 +16,12 @@ export const env = {
   isProd: process.env.NODE_ENV === 'production',
   port: Number(process.env.PORT || 4000),
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  // The FIRST origin, used to build user-facing links in emails. CLIENT_ORIGIN
+  // may be a comma-separated allowlist for CORS, so never build URLs from the
+  // raw value — that produces broken links like "https://a.com,https://b.com/x".
+  get primaryClientOrigin() {
+    return (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+  },
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:4000',
 
   databaseUrl: required('DATABASE_URL'),

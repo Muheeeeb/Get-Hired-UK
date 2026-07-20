@@ -10,6 +10,67 @@ import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
 import { activitySummary } from '../lib/sessions.js';
 import { PACKAGE_CHOICES } from '../config/packages.js';
+import { deleteFile } from '../lib/storage.js';
+
+/**
+ * Permanently remove a user from the database so their email can be reused.
+ *
+ * The tricky part: many rows have REQUIRED links back to this user (jobs they
+ * logged, documents they uploaded, chat messages they sent). Deleting the row
+ * outright would either fail on the foreign key or destroy clients' history.
+ * So we REASSIGN those authored records to a surviving admin (fallbackId),
+ * keeping the audit trail intact, and only fully delete data that belongs to
+ * the user themselves (a client's own profile, documents and conversations).
+ * Runs in one transaction; storage files are cleaned up best-effort afterward.
+ */
+async function hardDeleteUser(targetId, fallbackId) {
+  // Collect the client's own file keys up front (deleted with their profile).
+  const profile = await prisma.clientProfile.findUnique({ where: { userId: targetId } });
+  const fileKeys = [];
+  if (profile) {
+    const [masters, tailored, sessions, attachments] = await Promise.all([
+      prisma.masterDocument.findMany({ where: { domain: { clientId: profile.id } }, select: { fileKey: true } }),
+      prisma.tailoredDocument.findMany({ where: { jobApplication: { clientId: profile.id } }, select: { fileKey: true } }),
+      prisma.interviewSession.findMany({ where: { clientId: profile.id }, select: { fileKey: true } }),
+      prisma.message.findMany({ where: { conversation: { clientUserId: targetId }, fileKey: { not: null } }, select: { fileKey: true } }),
+    ]);
+    for (const row of [...masters, ...tailored, ...sessions, ...attachments]) {
+      if (row.fileKey) fileKeys.push(row.fileKey);
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Reassign authored records to the surviving admin (preserves history).
+    await tx.jobApplication.updateMany({ where: { employeeId: targetId }, data: { employeeId: fallbackId } });
+    await tx.masterDocument.updateMany({ where: { uploadedById: targetId }, data: { uploadedById: fallbackId } });
+    await tx.tailoredDocument.updateMany({ where: { uploadedById: targetId }, data: { uploadedById: fallbackId } });
+    await tx.interviewResource.updateMany({ where: { createdById: targetId }, data: { createdById: fallbackId } });
+
+    // Release optional links.
+    await tx.clientProfile.updateMany({ where: { assignedEmployeeId: targetId }, data: { assignedEmployeeId: null } });
+    await tx.interviewSession.updateMany({ where: { assignedEmployeeId: targetId }, data: { assignedEmployeeId: null } });
+    await tx.conversation.updateMany({ where: { assignedEmployeeId: targetId }, data: { assignedEmployeeId: null } });
+
+    if (profile) {
+      // The client's own conversations go entirely (cascades messages + reads).
+      await tx.conversation.deleteMany({ where: { clientUserId: targetId } });
+      // Their profile cascades: domains, master docs, jobs (+tailored), pulse logs, sessions.
+      await tx.clientProfile.delete({ where: { id: profile.id } });
+    }
+
+    // Any remaining authored chat/sessions elsewhere → reassign, then unlink.
+    await tx.message.updateMany({ where: { senderId: targetId }, data: { senderId: fallbackId } });
+    await tx.conversation.updateMany({ where: { createdById: targetId }, data: { createdById: fallbackId } });
+    await tx.interviewSession.updateMany({ where: { createdById: targetId }, data: { createdById: fallbackId } });
+    await tx.conversation.updateMany({ where: { clientUserId: targetId }, data: { clientUserId: null } });
+    await tx.conversationRead.deleteMany({ where: { userId: targetId } });
+
+    // Tokens and sessions cascade automatically with the user row.
+    await tx.user.delete({ where: { id: targetId } });
+  });
+
+  for (const key of fileKeys) await deleteFile(key);
+}
 
 const domainsSchema = z
   .array(z.string().min(2, 'Domain too short').max(2000, 'Domain too long (max 2000 chars)'))
@@ -191,6 +252,20 @@ router.put(
   }
 );
 
+/** Permanently delete an employee (frees their email for reuse). */
+router.delete('/employees/:id', async (req, res, next) => {
+  try {
+    const employee = await prisma.user.findFirst({
+      where: { id: req.params.id, role: 'employee', deletedAt: null },
+    });
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    await hardDeleteUser(employee.id, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- clients ----------
 
 const createClientSchema = z.object({
@@ -327,7 +402,7 @@ router.put('/signups/:id/approve', validate(approveSchema), async (req, res, nex
       });
     });
 
-    const portalUrl = `${env.clientOrigin.split(',')[0]}/login`;
+    const portalUrl = `${env.primaryClientOrigin}/login`;
     sendMail({
       to: user.email,
       subject: 'Your Get Hired UK account is approved 🎉',
@@ -509,6 +584,18 @@ router.put(
     }
   }
 );
+
+/** Permanently delete a client and ALL their data (frees their email for reuse). */
+router.delete('/clients/:id', async (req, res, next) => {
+  try {
+    const profile = await prisma.clientProfile.findUnique({ where: { id: req.params.id } });
+    if (!profile) return res.status(404).json({ error: 'Client not found' });
+    await hardDeleteUser(profile.userId, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ---------- leaderboard ----------
 
@@ -767,6 +854,22 @@ router.put(
     }
   }
 );
+
+/** Permanently delete an admin (Lead only; frees the email for reuse). */
+router.delete('/admins/:id', requireLead, async (req, res, next) => {
+  try {
+    const target = await prisma.user.findFirst({
+      where: { id: req.params.id, role: 'admin', deletedAt: null },
+    });
+    if (!target) return res.status(404).json({ error: 'Admin not found' });
+    if (target.isLead) return res.status(400).json({ error: 'The Admin Lead account cannot be deleted' });
+    if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
+    await hardDeleteUser(target.id, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /** Team activity: login status + working time of admins and employees (Lead only). */
 router.get('/activity', requireLead, async (req, res, next) => {
