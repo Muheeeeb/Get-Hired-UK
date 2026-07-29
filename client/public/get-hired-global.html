@@ -800,6 +800,61 @@
   footer .foot-brand{display:flex; align-items:center; gap:10px; color:rgba(255,255,255,0.85);}
   footer .foot-links{display:flex; gap:22px;}
   footer a:hover{color:var(--white);}
+
+  /* ---------- MOBILE FIT & TYPE SCALE ---------- */
+  html, body{width:100%; max-width:100%; overflow-x:hidden;}
+  .hero, .how, .included, .focus, .packages, .faq, .testimonials, .contact{overflow-x:clip;}
+  @media(max-width:640px){
+    .wrap{padding-left:20px; padding-right:20px;}
+    .nav{gap:10px; padding:11px 16px; align-items:center;}
+    .logo-mark{width:38px; height:38px; border-radius:10px;}
+    .brand{gap:8px; min-width:0;}
+    .brand-text .name{font-size:1rem; white-space:nowrap;}
+    .brand-text .tag{display:none;}
+    .nav-actions{gap:0; flex-shrink:0;}
+    .nav-actions .btn-gold{padding:9px 13px; font-size:.73rem; white-space:nowrap;}
+    .hero{padding:48px 0 42px;}
+    .hero-grid{gap:30px;}
+    .hero h1{font-size:clamp(2.35rem, 11.5vw, 3.35rem); line-height:1.03; overflow-wrap:anywhere;}
+    .hero-sub{margin-top:18px; font-size:.98rem; line-height:1.65;}
+    .hero-poem{margin-top:24px; font-size:1.05rem;}
+    .hero-actions{margin-top:25px; gap:10px;}
+    .btn-navy, .btn-ghost-outline{padding:13px 17px; font-size:.86rem;}
+    .stat-chips{margin-top:26px; gap:12px;}
+    .stat-chip{font-size:.8rem; min-width:0;}
+    .portal-stage{width:100%; max-width:100%; overflow:hidden;}
+    .browser-bar{padding:9px 10px;}
+    .browser-url{font-size:.56rem; padding:4px 8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .portal-sidebar{display:none;}
+    .portal-main{padding:10px; gap:8px;}
+    .p-momentum{padding:12px; gap:8px;}
+    .p-momentum p{font-size:.57rem;}
+    .p-ring{width:52px; height:52px;}
+    .p-two-col{grid-template-columns:1fr;}
+    .whatsapp-fab{right:8px; bottom:8px;}
+    .section-head{margin-bottom:34px;}
+    .section-head h2, .included-left h2, .contact h2{font-size:clamp(1.8rem, 9vw, 2.25rem);}
+    .section-head p, .included-left p{font-size:.96rem;}
+    .how, .included, .focus, .packages, .faq, .testimonials, .contact{padding:64px 0;}
+    .how-grid, .pkg-grid, .pkg-grid-4, .quote-grid, .contact-grid{grid-template-columns:1fr; gap:18px;}
+    .timeline-item{gap:14px; padding-bottom:28px;}
+    .timeline-icon{width:42px; height:42px;}
+    .timeline-item:not(:last-child)::after{left:20px; top:43px;}
+    .focus-grid{margin:0 -20px; padding-left:20px; padding-right:20px; gap:14px;}
+    .focus-card{flex-basis:82vw; max-width:82vw; padding:22px;}
+    .pkg-card{padding:28px 22px;}
+    .pkg-card.featured, .pkg-card.featured.in-view{transform:none !important;}
+    .faq-q{font-size:.96rem; padding:18px 0;}
+    .contact-grid{gap:30px;}
+    footer{padding:24px 20px; align-items:flex-start; flex-direction:column; font-size:.78rem;}
+    footer .foot-links{gap:14px; flex-wrap:wrap;}
+  }
+  @media(max-width:360px){
+    .nav-actions .btn-gold{padding:8px 10px; font-size:.68rem;}
+    .brand-text .name{font-size:.9rem;}
+    .hero h1{font-size:2.25rem;}
+    .hero-actions .btn-navy, .hero-actions .btn-ghost-outline{width:100%; justify-content:center;}
+  }
 </style>
 </head>
 <body>
@@ -1183,20 +1238,21 @@
       <h2>Ready to turn the key?</h2>
       <p class="lead">Tell us about your search, and we'll get back to you within one working day to set up your call.</p>
     </div>
-    <form onsubmit="event.preventDefault(); this.querySelector('.btn-gold').textContent='Sent! We\'ll be in touch.';">
+    <form id="consult-form">
       <div class="field">
         <label for="name">Name</label>
-        <input id="name" type="text" placeholder="Your name" required>
+        <input id="name" name="name" type="text" placeholder="Your name" required>
       </div>
       <div class="field">
         <label for="email">Email</label>
-        <input id="email" type="email" placeholder="you@email.com" required>
+        <input id="email" name="email" type="email" placeholder="you@email.com" required>
       </div>
       <div class="field">
         <label for="message">What are you looking for?</label>
-        <textarea id="message" rows="3" placeholder="e.g. I want to move into product management"></textarea>
+        <textarea id="message" name="message" rows="3" placeholder="e.g. I want to move into product management"></textarea>
       </div>
       <button class="btn-gold" type="submit">Book my free consultation</button>
+      <p id="consult-status" style="margin-top:10px;font-size:0.85rem;"></p>
     </form>
   </div>
 </section>
@@ -1360,6 +1416,50 @@
     });
   }, {threshold:0.6});
   document.querySelectorAll('.pkg-stat-num').forEach(el => countObserver.observe(el));
+</script>
+
+<script>
+  /* Wire the consultation form to the real backend so leads reach the admin portal. */
+  (function () {
+    var form = document.getElementById('consult-form');
+    if (!form) return;
+    var API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'http://localhost:4000'
+      : 'https://api.gethired.world';
+    var status = document.getElementById('consult-status');
+    var btn = form.querySelector('.btn-gold');
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var fullName = form.querySelector('#name').value.trim();
+      var email = form.querySelector('#email').value.trim();
+      var message = form.querySelector('#message').value.trim();
+      if (!fullName || !email) { status.style.color = '#c43d3d'; status.textContent = 'Please add your name and email.'; return; }
+      btn.disabled = true;
+      var original = btn.textContent;
+      btn.textContent = 'Sending…';
+      status.textContent = '';
+      try {
+        var res = await fetch(API + '/public/consultations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fullName: fullName, email: email, message: message, interest: 'Website enquiry' })
+        });
+        if (!res.ok) {
+          var data = await res.json().catch(function () { return {}; });
+          throw new Error((data && data.error) || 'Something went wrong — please email Career@gethired.world.');
+        }
+        form.reset();
+        btn.textContent = 'Sent! We\'ll be in touch.';
+        status.style.color = '#1e9e5a';
+        status.textContent = 'Thanks — your request has reached our team.';
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = original;
+        status.style.color = '#c43d3d';
+        status.textContent = err.message || 'Could not send — please try again.';
+      }
+    });
+  })();
 </script>
 
 </body>
