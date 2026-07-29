@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/client';
-import { Button, Input, PasswordInput, Spinner } from '../components/ui';
+import { Button, Input, PasswordInput, Select, Spinner } from '../components/ui';
 
 export default function Signup() {
-  const [form, setForm] = useState({ fullName: '', email: '', password: '', confirm: '', phone: '', note: '' });
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', confirm: '', phone: '', note: '', country: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
@@ -26,6 +26,7 @@ export default function Signup() {
         password: form.password,
         phone: form.phone,
         note: form.note,
+        country: form.country,
       });
       setDone(true);
     } catch (err) {
@@ -41,12 +42,12 @@ export default function Signup() {
       <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-navy-900 p-12 lg:flex">
         <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" aria-hidden="true" />
         <div className="absolute -bottom-40 -left-20 h-96 w-96 rounded-full bg-navy-600/30 blur-3xl" aria-hidden="true" />
-        <Link to="/" className="relative flex items-center gap-3" aria-label="Back to the Get Hired UK homepage">
+        <Link to="/" className="relative flex items-center gap-3" aria-label="Back to the Get Hired Global homepage">
           <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-white/20">
             <img src="/logo-mark.png" alt="" className="h-full w-full object-contain p-[3px]" />
           </span>
           <div>
-            <div className="font-display text-xl text-ivory">Get Hired UK</div>
+            <div className="font-display text-xl text-ivory">Get Hired Global</div>
             <div className="text-[11px] tracking-[0.25em] uppercase text-gold-300/80">Client Registration</div>
           </div>
         </Link>
@@ -60,7 +61,7 @@ export default function Signup() {
             and a specialist applying to hand-picked roles on your behalf.
           </p>
         </div>
-        <div className="relative text-xs text-ivory/40">© 2016 Get Hired UK</div>
+        <div className="relative text-xs text-ivory/40">© 2026 Get Hired Global. All rights reserved.</div>
       </div>
 
       {/* Form panel */}
@@ -95,6 +96,10 @@ export default function Signup() {
                 value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="you@example.com" />
               <Input id="phone" label="Phone (optional)" autoComplete="tel"
                 value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+44 …" />
+              <Select id="country" label="Country you want to apply in" required value={form.country} onChange={(e) => set('country', e.target.value)}>
+                <option value="">Select a country</option>
+                {['United Kingdom', 'Australia', 'Canada', 'New Zealand'].map((country) => <option key={country} value={country}>{country}</option>)}
+              </Select>
               <div className="grid gap-4 sm:grid-cols-2">
                 <PasswordInput id="password" label="Password (min 10)" required minLength={10} autoComplete="new-password"
                   value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••••" />

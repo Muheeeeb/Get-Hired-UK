@@ -45,7 +45,7 @@ export const env = {
     port: Number(process.env.SMTP_PORT || 587),
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
-    from: process.env.MAIL_FROM || 'Get Hired UK <pulse@gethired.world>',
+    from: process.env.MAIL_FROM || 'Get Hired Global <pulse@gethired.world>',
   },
   // Inbox that receives new sign-up + consultation notifications.
   officeEmail: process.env.OFFICE_EMAIL || 'Career@gethired.world',

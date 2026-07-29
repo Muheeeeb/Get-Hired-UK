@@ -11,7 +11,7 @@ const WHATSAPP = [
   { display: '07584 076205', wa: '447584076205' },
   { display: '07584 076159', wa: '447584076159' },
 ];
-const waLink = (n) => `https://wa.me/${n}?text=${encodeURIComponent("Hi Get Hired UK — I'd like to know more about your packages.")}`;
+const waLink = (n) => `https://wa.me/${n}?text=${encodeURIComponent("Hi Get Hired Global — I'd like to know more about your packages.")}`;
 
 /* ---------------- real, live information ---------------- */
 
@@ -301,7 +301,7 @@ export default function Landing() {
           <a href="#top" className="flex items-center gap-2.5">
             <LogoMark size={42} />
             <span className="leading-tight">
-              <span className="block font-display text-[17px] font-semibold text-navy-800">Get Hired UK</span>
+              <span className="block font-display text-[17px] font-semibold text-navy-800">Get Hired Global</span>
               <span className="block text-[9px] font-semibold uppercase tracking-[0.18em] text-gold-600">Your career · Our mission · Your success</span>
             </span>
           </a>
@@ -398,7 +398,7 @@ export default function Landing() {
             <Reveal delay={320}>
               <ul className="mt-10 flex max-w-lg flex-wrap gap-x-8 gap-y-3">
                 {[
-                  [ic.send, 'Up to 40 applications a week'],
+                  [ic.send, '80+ applications a week'],
                   [ic.pen, 'Every document tailored'],
                   [ic.mail, 'Reported daily at 19:00'],
                 ].map(([d, t]) => (
@@ -432,7 +432,7 @@ export default function Landing() {
                 </div>
                 <img
                   src="/marketing/dashboard-desktop.png"
-                  alt="The Get Hired UK client dashboard: momentum meter at 24 of 40 applications, LinkedIn tracker and master documents"
+                  alt="The Get Hired Global client dashboard with momentum meter, LinkedIn tracker and master documents"
                   className="block w-full"
                   loading="eager"
                 />
@@ -626,8 +626,8 @@ export default function Landing() {
                 tag: 'The essentials',
                 dark: false,
                 features: [
-                  'Tailored CV (3–4 domains)',
-                  'Tailored cover letters',
+                  'Personalised CV (3–4 domains)',
+                  'Personalised cover letters',
                 ],
               },
               {
@@ -635,8 +635,8 @@ export default function Landing() {
                 tag: 'Add your profile',
                 dark: false,
                 features: [
-                  'Tailored CV (3–4 domains)',
-                  'Tailored cover letters',
+                  'Personalised CV (3–4 domains)',
+                  'Personalised cover letters',
                   'LinkedIn optimisation',
                 ],
               },
@@ -644,10 +644,10 @@ export default function Landing() {
                 name: 'Platinum',
                 tag: 'Everything, at pace',
                 dark: true,
-                highlight: '40 tailored job applications per week',
+                highlight: '80+ job applications per week',
                 features: [
-                  'Tailored CV (3–4 domains)',
-                  'Tailored cover letters',
+                  'Personalised CV (3–4 domains)',
+                  'Personalised cover letters',
                   'LinkedIn optimisation',
                   'Interview Preparation Hub',
                 ],
@@ -688,9 +688,9 @@ export default function Landing() {
 
                   {p.highlight && (
                     <div className="mt-5 rounded-2xl bg-gold-500/15 px-4 py-3 ring-1 ring-gold-500/30">
-                      <span className="font-display text-[2.6rem] leading-none text-gold-300">40</span>
+                      <span className="font-display text-[2.6rem] leading-none text-gold-300">80+</span>
                       <span className="mt-1 block text-[12.5px] leading-snug text-ivory/70">
-                        tailored job applications<br />per week
+                        job applications<br />per week
                       </span>
                     </div>
                   )}
@@ -808,7 +808,7 @@ export default function Landing() {
             <div className="md:col-span-4">
               <div className="flex items-center gap-2.5">
                 <LogoMark size={38} />
-                <span className="font-display text-lg text-ivory">Get Hired UK</span>
+                <span className="font-display text-lg text-ivory">Get Hired Global</span>
               </div>
               <p className="mt-4 max-w-xs text-[13.5px] leading-relaxed text-ivory/45">
                 A dedicated team that runs your job search — sourcing, tailoring and applying —
@@ -860,7 +860,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="mt-12 flex flex-col justify-between gap-2 border-t border-white/10 pt-6 text-[12px] text-ivory/30 sm:flex-row">
-            <p>© 2016 Get Hired UK. All rights reserved.</p>
+            <p>© 2026 Get Hired Global. All rights reserved.</p>
             <p>Portal screenshots show sample data.</p>
           </div>
         </div>

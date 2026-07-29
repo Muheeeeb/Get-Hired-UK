@@ -33,7 +33,7 @@ async function sendVerificationEmail(user) {
   const link = `${env.primaryClientOrigin}/verify-email?token=${raw}`;
   await sendMail({
     to: user.email,
-    subject: 'Verify your email — Get Hired UK',
+    subject: 'Verify your email — Get Hired Global',
     html: brandedEmail({
       heading: 'Verify your email',
       bodyHtml: `<p>Hi ${user.fullName.split(' ')[0]},</p><p>Please confirm your email address to complete your registration. This link expires in 24 hours.</p>`,
@@ -116,6 +116,7 @@ const signupSchema = z.object({
   password: z.string().min(10, 'Password must be at least 10 characters').max(200),
   phone: z.string().max(40).optional().or(z.literal('')),
   note: z.string().max(2000).optional().or(z.literal('')),
+  country: z.enum(['United Kingdom', 'Australia', 'Canada', 'New Zealand']),
 });
 
 /**
@@ -124,7 +125,7 @@ const signupSchema = z.object({
  */
 router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, next) => {
   try {
-    const { fullName, email, password, phone, note } = req.body;
+    const { fullName, email, password, phone, note, country } = req.body;
     const lower = email.toLowerCase();
     const existing = await prisma.user.findUnique({ where: { email: lower } });
     if (existing) {
@@ -143,6 +144,8 @@ router.post('/signup', signupLimiter, validate(signupSchema), async (req, res, n
         approvalStatus: 'pending',
         phone: phone || null,
         signupNote: note || null,
+        // Kept until approval, when it is copied to the client's profile.
+        designation: country,
         // Without a mail transport a verification email can never arrive, so
         // auto-verify to avoid locking users out; enforce only when SMTP is set.
         emailVerifiedAt: env.smtp.host ? null : new Date(),
@@ -335,7 +338,7 @@ router.post(
         const url = `${env.primaryClientOrigin}/reset-password?token=${raw}`;
         await sendMail({
           to: user.email,
-          subject: 'Reset your Get Hired UK password',
+          subject: 'Reset your Get Hired Global password',
           html: brandedEmail({
             heading: 'Password Reset',
             bodyHtml: `<p>Hi ${user.fullName},</p><p>We received a request to reset your password. This link expires in 30 minutes.</p>`,

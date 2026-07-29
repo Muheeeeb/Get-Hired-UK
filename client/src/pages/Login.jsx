@@ -48,12 +48,12 @@ export default function Login() {
       <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-navy-900 p-12 lg:flex">
         <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" aria-hidden="true" />
         <div className="absolute -bottom-40 -left-20 h-96 w-96 rounded-full bg-navy-600/30 blur-3xl" aria-hidden="true" />
-        <Link to="/" className="relative flex items-center gap-3" aria-label="Back to the Get Hired UK homepage">
+        <Link to="/" className="relative flex items-center gap-3" aria-label="Back to the Get Hired Global homepage">
           <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-white/20">
             <img src="/logo-mark.png" alt="" className="h-full w-full object-contain p-[3px]" />
           </span>
           <div>
-            <div className="font-display text-xl text-ivory">Get Hired UK</div>
+            <div className="font-display text-xl text-ivory">Get Hired Global</div>
             <div className="text-[11px] tracking-[0.25em] uppercase text-gold-300/80">Operations Portal</div>
           </div>
         </Link>
@@ -67,7 +67,7 @@ export default function Login() {
             A dedicated team applying to hand-picked roles for you, every single day — with a tailored CV and cover letter for every application.
           </p>
         </div>
-        <div className="relative text-xs text-ivory/40">© 2016 Get Hired UK</div>
+        <div className="relative text-xs text-ivory/40">© 2026 Get Hired Global. All rights reserved.</div>
       </div>
 
       {/* Form panel */}

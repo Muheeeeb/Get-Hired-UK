@@ -88,40 +88,15 @@ function JobsTab({ clientId, dash, jobs, onChanged }) {
   const [form, setForm] = useState({
     jobTitle: '', company: '',
     applicationDate: new Date().toISOString().slice(0, 10),
-    jobUrl: '', domainId: '',
+    jobUrl: '',
   });
   const [cvFile, setCvFile] = useState(null);
   const [clFile, setClFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
 
-  // AI assistant state
-  const [aiDraft, setAiDraft] = useState('');
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiErr, setAiErr] = useState(null);
   const cvInputRef = useRef(null);
   const clInputRef = useRef(null);
-
-  async function draftWithAI() {
-    if (!form.jobTitle || !form.company) {
-      return setAiErr('Enter the job title and company first');
-    }
-    setAiBusy(true);
-    setAiErr(null);
-    try {
-      const { data } = await api.post('/ai/cover-letter', {
-        clientId,
-        jobTitle: form.jobTitle,
-        company: form.company,
-        ...(form.domainId ? { domainId: form.domainId } : {}),
-      });
-      setAiDraft(data.draft);
-    } catch (e) {
-      setAiErr(errorMessage(e, 'AI drafting failed'));
-    } finally {
-      setAiBusy(false);
-    }
-  }
 
   async function submit(e) {
     e.preventDefault();
@@ -143,13 +118,10 @@ function JobsTab({ clientId, dash, jobs, onChanged }) {
         fd.append('file', cvFile);
         uploads.push(api.post(`/jobs/${jobId}/tailored-docs`, fd));
       }
-      const coverLetterBlob = !clFile && aiDraft
-        ? new File([aiDraft], `Cover Letter — ${form.company}.txt`, { type: 'text/plain' })
-        : clFile;
-      if (coverLetterBlob) {
+      if (clFile) {
         const fd = new FormData();
         fd.append('type', 'tailored_cover_letter');
-        fd.append('file', coverLetterBlob);
+        fd.append('file', clFile);
         uploads.push(api.post(`/jobs/${jobId}/tailored-docs`, fd));
       }
       await Promise.all(uploads);
@@ -157,7 +129,6 @@ function JobsTab({ clientId, dash, jobs, onChanged }) {
       setForm({ ...form, jobTitle: '', company: '', jobUrl: '' });
       setCvFile(null);
       setClFile(null);
-      setAiDraft('');
       if (cvInputRef.current) cvInputRef.current.value = '';
       if (clInputRef.current) clInputRef.current.value = '';
       onChanged();
@@ -201,40 +172,7 @@ function JobsTab({ clientId, dash, jobs, onChanged }) {
               <input ref={clInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.odt"
                 onChange={(e) => setClFile(e.target.files[0] || null)}
                 className="block w-full text-sm text-ink-soft file:mr-3 file:rounded-lg file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-ivory hover:file:bg-navy-700 file:cursor-pointer" />
-              <p className="mt-1 text-xs text-ink-soft">…or draft one with AI below — it uploads automatically.</p>
             </div>
-          </div>
-
-          {/* ✨ AI Writing Assistant */}
-          <div className="rounded-2xl border border-gold-500/30 bg-gold-100/40 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="font-semibold text-navy-800">AI Writing Assistant</div>
-                <div className="text-xs text-ink-soft">
-                  Drafts a cover letter from the client's master CV + this job's details.
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Select id="j-domain" value={form.domainId} aria-label="Domain for AI draft"
-                  onChange={(e) => setForm({ ...form, domainId: e.target.value })} className="!w-auto">
-                  <option value="">Auto domain</option>
-                  {dash.domains.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </Select>
-                <Button type="button" onClick={draftWithAI} disabled={aiBusy}>
-                  {aiBusy ? <Spinner /> : '✨'} {aiBusy ? 'Drafting…' : aiDraft ? 'Regenerate' : 'Draft with AI'}
-                </Button>
-              </div>
-            </div>
-            {aiErr && <p className="mt-2 text-sm text-danger">{aiErr}</p>}
-            {aiDraft && (
-              <textarea
-                value={aiDraft}
-                onChange={(e) => setAiDraft(e.target.value)}
-                rows={10}
-                aria-label="AI cover letter draft (editable)"
-                className="mt-3 w-full rounded-xl border border-navy-800/15 bg-white p-3.5 text-sm leading-relaxed focus:border-gold-500 focus:ring-2 focus:ring-gold-500/30 outline-none"
-              />
-            )}
           </div>
 
           {err && <p className="text-sm text-danger">{err}</p>}

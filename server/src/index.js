@@ -31,6 +31,6 @@ ensureAdminLead();
 const host = process.env.HOST || (env.isProd ? '127.0.0.1' : '0.0.0.0');
 
 app.listen(env.port, host, () => {
-  console.log(`[server] Get Hired UK API on ${host}:${env.port} (${env.nodeEnv})`);
+  console.log(`[server] Get Hired Global API on ${host}:${env.port} (${env.nodeEnv})`);
   scheduleDailyPulse();
 });

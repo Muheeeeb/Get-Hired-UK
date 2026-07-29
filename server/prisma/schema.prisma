@@ -111,6 +111,8 @@ model Conversation {
   clientUserId       String?            @map("client_user_id") @db.Uuid
   // When assigned, only this employee (plus admins) may reply.
   assignedEmployeeId String?            @map("assigned_employee_id") @db.Uuid
+  // Team-only group chats are named threads with the selected employee IDs.
+  memberIds          String[]           @default([]) @map("member_ids") @db.Uuid
   status             ConversationStatus @default(open)
   lastMessageAt      DateTime           @default(now()) @map("last_message_at")
   createdAt          DateTime           @default(now()) @map("created_at")
@@ -184,6 +186,14 @@ model ClientProfile {
   expiryDate         DateTime       @map("expiry_date") @db.Date
   linkedinStatus     LinkedinStatus @default(not_started) @map("linkedin_status")
   monthlyJobTarget   Int            @default(40) @map("monthly_job_target")
+  country            String?
+  dateOfBirth        DateTime?      @map("date_of_birth") @db.Date
+  niNumber           String?        @map("ni_number")
+  visaStatus         String?        @map("visa_status")
+  visaExpiryDate     DateTime?      @map("visa_expiry_date") @db.Date
+  residentialAddress String?        @map("residential_address")
+  postcode           String?
+  notes              String?
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 

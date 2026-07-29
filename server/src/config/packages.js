@@ -8,13 +8,13 @@ export const PACKAGES = [
     key: 'silver',
     name: 'Silver',
     tag: 'The essentials',
-    features: ['Tailored CV (3–4 domains)', 'Tailored cover letters'],
+    features: ['Personalised CV (3–4 domains)', 'Personalised cover letters'],
   },
   {
     key: 'gold',
     name: 'Gold',
     tag: 'Add your profile',
-    features: ['Tailored CV (3–4 domains)', 'Tailored cover letters', 'LinkedIn optimisation'],
+    features: ['Personalised CV (3–4 domains)', 'Personalised cover letters', 'LinkedIn optimisation'],
   },
   {
     key: 'platinum',
@@ -23,8 +23,8 @@ export const PACKAGES = [
     popular: true,
     applicationsPerWeek: 80,
     features: [
-      'Tailored CV (3–4 domains)',
-      'Tailored cover letters',
+      'Personalised CV (3–4 domains)',
+      'Personalised cover letters',
       'LinkedIn optimisation',
       'Interview Preparation Hub',
     ],

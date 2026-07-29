@@ -40,7 +40,7 @@ export function brandedEmail({ heading, bodyHtml, ctaLabel, ctaUrl }) {
   <div style="margin:0;padding:32px 16px;background:#F7F6F2;font-family:Georgia,'Times New Roman',serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;">
       <tr><td style="background:#0A1F44;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
-        <div style="color:#E4C55A;font-size:13px;letter-spacing:3px;text-transform:uppercase;">Get Hired UK</div>
+        <div style="color:#E4C55A;font-size:13px;letter-spacing:3px;text-transform:uppercase;">Get Hired Global</div>
         <div style="color:#F7F6F2;font-size:24px;margin-top:8px;font-weight:bold;">${heading}</div>
       </td></tr>
       <tr><td style="background:#ffffff;padding:32px;border:1px solid #e5e0d5;border-top:none;">

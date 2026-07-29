@@ -48,7 +48,7 @@ function Brand() {
     <div className="flex items-center gap-3 px-5 py-6">
       <LogoChip size={40} />
       <div>
-        <div className="font-display text-ivory text-base leading-tight">Get Hired UK</div>
+        <div className="font-display text-ivory text-base leading-tight">Get Hired Global</div>
         <div className="text-[10px] tracking-[0.2em] uppercase text-gold-300/80">Operations Portal</div>
       </div>
     </div>
@@ -64,6 +64,7 @@ export function AppShell({ children, alertMode = false }) {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [profileRequired, setProfileRequired] = useState(false);
   const [unread, setUnread] = useState(0);
   const items = navFor(user);
 
@@ -79,6 +80,13 @@ export function AppShell({ children, alertMode = false }) {
       on = false;
       clearInterval(id);
     };
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.role !== 'client') return;
+    api.get('/clients/me/profile').then((r) => {
+      if (!r.data.complete) { setProfileRequired(true); setShowAccount(true); }
+    }).catch(() => {});
   }, [user]);
 
   async function handleLogout() {
@@ -145,7 +153,7 @@ export function AppShell({ children, alertMode = false }) {
       <header className="sticky top-0 z-40 flex items-center justify-between bg-navy-900 px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
           <LogoChip size={32} />
-          <span className="font-display text-ivory">Get Hired UK</span>
+          <span className="font-display text-ivory">Get Hired Global</span>
         </div>
         <button
           onClick={() => setMobileOpen(true)}
@@ -181,12 +189,12 @@ export function AppShell({ children, alertMode = false }) {
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-10">{children}</div>
       </main>
 
-      <ChangePasswordModal open={showAccount} onClose={() => setShowAccount(false)} user={user} />
+      <ChangePasswordModal open={showAccount} onClose={() => { if (!profileRequired) setShowAccount(false); }} user={user} requiredProfile={profileRequired} onProfileComplete={() => setProfileRequired(false)} />
     </div>
   );
 }
 
-function ChangePasswordModal({ open, onClose, user }) {
+function ChangePasswordModal({ open, onClose, user, requiredProfile, onProfileComplete }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -219,7 +227,8 @@ function ChangePasswordModal({ open, onClose, user }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Account">
+    <Modal open={open} onClose={onClose} title={requiredProfile ? 'Complete your profile' : 'Account'}>
+      {user?.role === 'client' && <ClientProfile requiredProfile={requiredProfile} onComplete={onProfileComplete} />}
       {/* Full account details */}
       <div className="mb-5 space-y-1.5 rounded-xl bg-ivory px-4 py-3.5 text-sm">
         <div className="flex justify-between gap-4">
@@ -271,6 +280,36 @@ function ChangePasswordModal({ open, onClose, user }) {
       </div>
     </Modal>
   );
+}
+
+function ClientProfile({ requiredProfile, onComplete }) {
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => { api.get('/clients/me/profile').then((r) => setForm(r.data.profile)).catch((err) => setError(errorMessage(err))); }, []);
+  if (!form) return <div className="mb-5 text-sm text-ink-soft">Loading your profile…</div>;
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  async function save(e) {
+    e.preventDefault(); setBusy(true); setError(null);
+    try { await api.put('/clients/me/profile', form); onComplete(); }
+    catch (err) { setError(errorMessage(err)); }
+    finally { setBusy(false); }
+  }
+  return <form onSubmit={save} className="mb-5 space-y-3 rounded-xl border border-gold-500/25 bg-gold-100/30 p-4">
+    <p className="text-sm font-semibold text-navy-800">{requiredProfile ? 'Please provide all mandatory details to continue.' : 'Personal details'}</p>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Input id="dob" label="Date of birth" type="date" required value={form.dateOfBirth?.slice(0, 10) || ''} onChange={(e) => set('dateOfBirth', e.target.value)} />
+      <Input id="ni" label="NI number" required maxLength={80} value={form.niNumber || ''} onChange={(e) => set('niNumber', e.target.value)} />
+      <Input id="visa" label="Visa status" required maxLength={120} value={form.visaStatus || ''} onChange={(e) => set('visaStatus', e.target.value)} />
+      <Input id="visa-expiry" label="Visa expiry date" type="date" required value={form.visaExpiryDate?.slice(0, 10) || ''} onChange={(e) => set('visaExpiryDate', e.target.value)} />
+      <Input id="profile-phone" label="Phone number" type="tel" required maxLength={40} value={form.phone || ''} onChange={(e) => set('phone', e.target.value)} />
+      <Input id="postcode" label="Postcode" required maxLength={30} value={form.postcode || ''} onChange={(e) => set('postcode', e.target.value)} />
+    </div>
+    <label className="block"><span className="label-caps text-navy-800/70 block mb-1.5">Residential address</span><textarea required rows={2} maxLength={2000} className="w-full rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm" value={form.residentialAddress || ''} onChange={(e) => set('residentialAddress', e.target.value)} /></label>
+    <label className="block"><span className="label-caps text-navy-800/70 block mb-1.5">Additional notes (optional)</span><textarea rows={2} maxLength={2000} className="w-full rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm" value={form.notes || ''} onChange={(e) => set('notes', e.target.value)} /></label>
+    {error && <p className="text-sm text-danger">{error}</p>}
+    <Button type="submit" disabled={busy} className="w-full">{busy ? 'Saving…' : 'Save profile details'}</Button>
+  </form>;
 }
 
 export function PageHeader({ title, subtitle, action }) {
