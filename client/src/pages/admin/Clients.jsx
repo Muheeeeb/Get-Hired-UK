@@ -6,7 +6,7 @@ import { Card, Skeleton, EmptyState, Badge, Button, Input, Select, Modal } from 
 import { formatDate } from '../../components/files';
 
 const EMPTY_FORM = {
-  fullName: '', email: '', password: '', packageType: 'Platinum — 40 jobs/month',
+  fullName: '', email: '', password: '', packageType: 'Platinum — 80+ jobs/week',
   expiryDate: '', monthlyJobTarget: 40, assignedEmployeeId: '', domains: ['', '', ''],
 };
 

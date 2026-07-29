@@ -27,7 +27,7 @@ export default function Chat() {
   const [error, setError] = useState(null);
 
   const [showNew, setShowNew] = useState(false);
-  const [newForm, setNewForm] = useState({ subject: '', message: '', clientUserId: '' });
+  const [newForm, setNewForm] = useState({ subject: '', message: '', clientUserId: '', memberIds: [] });
   const [clients, setClients] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -86,9 +86,10 @@ export default function Chat() {
         subject: newForm.subject,
         message: newForm.message,
         ...(newForm.clientUserId ? { clientUserId: newForm.clientUserId } : {}),
+        ...(newForm.memberIds.length ? { memberIds: newForm.memberIds } : {}),
       });
       setShowNew(false);
-      setNewForm({ subject: '', message: '', clientUserId: '' });
+      setNewForm({ subject: '', message: '', clientUserId: '', memberIds: [] });
       loadList();
       setActiveId(data.conversation.id);
     } catch (err) {
@@ -120,6 +121,15 @@ export default function Chat() {
     await api.put(`/chat/conversations/${activeId}/assign`, { employeeId: employeeId || null });
     loadThread(activeId);
     loadList();
+  }
+
+  async function renameGroup() {
+    const subject = window.prompt('Group name', activeConvo.subject);
+    if (!subject?.trim() || subject.trim() === activeConvo.subject) return;
+    try {
+      await api.put(`/chat/conversations/${activeId}/subject`, { subject: subject.trim() });
+      loadThread(activeId); loadList();
+    } catch (err) { setError(errorMessage(err, 'Could not rename group')); }
   }
 
   const activeConvo = thread?.conversation;
@@ -201,6 +211,7 @@ export default function Chat() {
                 </div>
                 {user?.role === 'admin' && (
                   <div className="flex items-center gap-2">
+                    {!activeConvo.clientUser && activeConvo.memberIds?.length > 0 && <Button variant="ghost" onClick={renameGroup} className="!px-3 !py-1.5 text-xs">Rename group</Button>}
                     <Select
                       id="assign"
                       value={activeConvo.assignedEmployee?.id || ''}
@@ -286,13 +297,32 @@ export default function Chat() {
       <Modal open={showNew} onClose={() => setShowNew(false)} title="New conversation">
         <form onSubmit={createConversation} className="space-y-4">
           {user?.role === 'admin' && (
-            <Select id="nc-client" label="Client (optional)" value={newForm.clientUserId}
-              onChange={(e) => setNewForm({ ...newForm, clientUserId: e.target.value })}>
-              <option value="">— Team conversation —</option>
-              {clients.map((c) => (
-                <option key={c.userId} value={c.userId}>{c.name}</option>
-              ))}
-            </Select>
+            <>
+              <Select id="nc-client" label="Client (optional)" value={newForm.clientUserId}
+                onChange={(e) => setNewForm({ ...newForm, clientUserId: e.target.value, memberIds: [] })}>
+                <option value="">— Team conversation —</option>
+                {clients.map((c) => (
+                  <option key={c.userId} value={c.userId}>{c.name}</option>
+                ))}
+              </Select>
+              {!newForm.clientUserId && (
+                <fieldset className="rounded-xl border border-navy-800/15 p-3">
+                  <legend className="px-1 text-xs font-semibold text-navy-800">Employee group members</legend>
+                  <p className="mb-2 text-xs text-ink-soft">Select at least one employee to create a private group chat.</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {employees.filter((employee) => employee.isActive).map((employee) => (
+                      <label key={employee.id} className="flex items-center gap-2 text-sm text-ink">
+                        <input type="checkbox" checked={newForm.memberIds.includes(employee.id)} onChange={(e) => setNewForm({
+                          ...newForm,
+                          memberIds: e.target.checked ? [...newForm.memberIds, employee.id] : newForm.memberIds.filter((id) => id !== employee.id),
+                        })} />
+                        {employee.fullName}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+            </>
           )}
           <Input id="nc-subject" label="Subject" required maxLength={200} value={newForm.subject}
             onChange={(e) => setNewForm({ ...newForm, subject: e.target.value })} />

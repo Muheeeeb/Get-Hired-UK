@@ -31,7 +31,7 @@ const upload = multer({
 function canAccess(user, convo) {
   if (user.role === 'admin') return true;
   if (user.role === 'client') return convo.clientUserId === user.id;
-  return convo.assignedEmployeeId === user.id || convo.createdById === user.id;
+  return convo.assignedEmployeeId === user.id || convo.createdById === user.id || convo.memberIds.includes(user.id);
 }
 
 function canReply(user, convo) {
@@ -60,7 +60,7 @@ router.get('/conversations', async (req, res, next) => {
         ? {}
         : user.role === 'client'
           ? { clientUserId: user.id }
-          : { OR: [{ assignedEmployeeId: user.id }, { createdById: user.id }] };
+          : { OR: [{ assignedEmployeeId: user.id }, { createdById: user.id }, { memberIds: { has: user.id } }] };
 
     const conversations = await prisma.conversation.findMany({
       where,
@@ -92,6 +92,7 @@ router.get('/conversations', async (req, res, next) => {
           createdBy: c.createdBy,
           clientUser: c.clientUser,
           assignedEmployee: c.assignedEmployee,
+          memberIds: c.memberIds,
           lastMessageAt: c.lastMessageAt,
           lastMessage: c.messages[0] || null,
           unread,
@@ -115,7 +116,7 @@ router.get('/unread-count', async (req, res, next) => {
         ? {}
         : user.role === 'client'
           ? { clientUserId: user.id }
-          : { OR: [{ assignedEmployeeId: user.id }, { createdById: user.id }] };
+          : { OR: [{ assignedEmployeeId: user.id }, { createdById: user.id }, { memberIds: { has: user.id } }] };
     const convos = await prisma.conversation.findMany({ where, select: { id: true } });
     if (!convos.length) return res.json({ unread: 0 });
     const reads = await prisma.conversationRead.findMany({
@@ -144,12 +145,20 @@ const createSchema = z.object({
   subject: z.string().min(2).max(200),
   message: z.string().min(1).max(5000),
   clientUserId: z.string().uuid().optional(),
+  memberIds: z.array(z.string().uuid()).min(1).max(50).optional(),
 });
 
 router.post('/conversations', validate(createSchema), async (req, res, next) => {
   try {
     const { user } = req;
     let clientUserId = null;
+    let memberIds = [];
+    if (req.body.memberIds) {
+      if (user.role !== 'admin' || req.body.clientUserId) return res.status(403).json({ error: 'Only admins can create employee group chats' });
+      const employees = await prisma.user.findMany({ where: { id: { in: req.body.memberIds }, role: 'employee', isActive: true, deletedAt: null }, select: { id: true } });
+      if (employees.length !== new Set(req.body.memberIds).size) return res.status(400).json({ error: 'One or more selected employees are unavailable' });
+      memberIds = employees.map((employee) => employee.id);
+    }
     if (user.role === 'client') {
       clientUserId = user.id;
     } else if (req.body.clientUserId) {
@@ -171,6 +180,7 @@ router.post('/conversations', validate(createSchema), async (req, res, next) => 
         subject: req.body.subject,
         createdById: user.id,
         clientUserId,
+        memberIds,
         messages: { create: { senderId: user.id, body: req.body.message } },
       },
     });
@@ -197,6 +207,14 @@ router.post('/conversations', validate(createSchema), async (req, res, next) => 
   } catch (err) {
     next(err);
   }
+});
+
+/** Admins can rename team groups without altering their members or messages. */
+router.put('/conversations/:id/subject', loadConversation, authorizeRole(['admin']), validate(z.object({ subject: z.string().min(2).max(200) })), async (req, res, next) => {
+  try {
+    const conversation = await prisma.conversation.update({ where: { id: req.conversation.id }, data: { subject: req.body.subject } });
+    res.json({ conversation });
+  } catch (err) { next(err); }
 });
 
 /** Client "Renew" button → opens (or reuses) a renewal conversation with the team. */

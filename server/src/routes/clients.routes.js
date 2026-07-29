@@ -10,6 +10,43 @@ import { startOfMonth, daysUntil, dateOnly } from '../utils/dates.js';
 const router = Router();
 router.use(authenticate);
 
+const countries = ['United Kingdom', 'Australia', 'Canada', 'New Zealand'];
+const profileSchema = z.object({
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  niNumber: z.string().min(2).max(80),
+  visaStatus: z.string().min(2).max(120),
+  visaExpiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  residentialAddress: z.string().min(5).max(2000),
+  postcode: z.string().min(2).max(30),
+  phone: z.string().min(5).max(40),
+  notes: z.string().max(2000).optional().or(z.literal('')),
+});
+
+// This endpoint deliberately uses the caller rather than a supplied ID: clients
+// can only ever read or update their own sensitive account details.
+router.get('/me/profile', authorizeRole(['client']), async (req, res, next) => {
+  try {
+    const profile = await prisma.clientProfile.findUnique({ where: { userId: req.user.id }, include: { user: { select: { phone: true } } } });
+    if (!profile) return res.status(404).json({ error: 'Client profile not found' });
+    const complete = Boolean(profile.dateOfBirth && profile.niNumber && profile.visaStatus && profile.visaExpiryDate && profile.residentialAddress && profile.postcode && profile.user.phone);
+    res.json({ profile: { ...profile, phone: profile.user.phone }, complete, countries });
+  } catch (err) { next(err); }
+});
+
+router.put('/me/profile', authorizeRole(['client']), validate(profileSchema), async (req, res, next) => {
+  try {
+    const { phone, dateOfBirth, visaExpiryDate, ...profileData } = req.body;
+    const profile = await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: req.user.id }, data: { phone } });
+      return tx.clientProfile.update({
+        where: { userId: req.user.id },
+        data: { ...profileData, dateOfBirth: dateOnly(dateOfBirth), visaExpiryDate: dateOnly(visaExpiryDate), notes: profileData.notes || null },
+      });
+    });
+    res.json({ profile, complete: true });
+  } catch (err) { next(err); }
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -60,6 +97,11 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
         packageType: profile.packageType,
         linkedinStatus: profile.linkedinStatus,
         monthlyJobTarget: profile.monthlyJobTarget,
+        ...(req.user.role !== 'client' ? {
+          country: profile.country, dateOfBirth: profile.dateOfBirth, niNumber: profile.niNumber,
+          visaStatus: profile.visaStatus, visaExpiryDate: profile.visaExpiryDate,
+          residentialAddress: profile.residentialAddress, postcode: profile.postcode, notes: profile.notes,
+        } : {}),
       },
       momentum: {
         applied: monthCount,

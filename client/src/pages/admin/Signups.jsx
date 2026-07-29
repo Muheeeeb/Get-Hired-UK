@@ -16,7 +16,7 @@ const STATUS = {
 };
 
 const emptyApprove = {
-  packageType: 'Gold — 30 jobs/month',
+  packageType: 'Gold',
   expiryDate: '',
   monthlyJobTarget: 30,
   assignedEmployeeId: '',
@@ -27,6 +27,7 @@ export default function AdminSignups() {
   const [tab, setTab] = useState('pending');
   const [signups, setSignups] = useState(null);
   const [employees, setEmployees] = useState([]);
+  const [packageChoices, setPackageChoices] = useState([]);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
@@ -41,6 +42,7 @@ export default function AdminSignups() {
       .then((res) => setSignups(res.data.signups))
       .catch((err) => setError(errorMessage(err)));
     api.get('/admin/employees').then((res) => setEmployees(res.data.employees)).catch(() => {});
+    api.get('/admin/package-choices').then((res) => setPackageChoices(res.data.choices)).catch(() => {});
   }
   useEffect(load, [tab]);
 
@@ -159,8 +161,9 @@ export default function AdminSignups() {
             domains later from <strong className="text-navy-800">{approving?.email}</strong>'s client page.
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Input id="a-package" label="Package type (optional)" value={form.packageType}
+            <Input id="a-package" label="Package type (optional)" list="signup-package-options" value={form.packageType}
               onChange={(e) => setForm({ ...form, packageType: e.target.value })} />
+            <datalist id="signup-package-options">{packageChoices.map((choice) => <option key={choice} value={choice} />)}</datalist>
             <Input id="a-expiry" label="Expiry date (optional)" type="date" value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             <Input id="a-target" label="Monthly target (optional)" type="number" min={1} max={2000}

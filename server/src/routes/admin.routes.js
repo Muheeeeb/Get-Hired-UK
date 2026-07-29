@@ -392,6 +392,7 @@ router.put('/signups/:id/approve', validate(approveSchema), async (req, res, nex
             expiryDate: dateOnly(expiryDate),
             monthlyJobTarget,
             assignedEmployeeId: assignedEmployeeId || null,
+            country: user.designation || null,
             ...(domains ? { domains: { create: domains.map((name) => ({ name })) } } : {}),
           },
         });
@@ -405,7 +406,7 @@ router.put('/signups/:id/approve', validate(approveSchema), async (req, res, nex
     const portalUrl = `${env.primaryClientOrigin}/login`;
     sendMail({
       to: user.email,
-      subject: 'Your Get Hired UK account is approved 🎉',
+      subject: 'Your Get Hired Global account is approved 🎉',
       html: brandedEmail({
         heading: 'You’re all set',
         bodyHtml: `
@@ -421,7 +422,7 @@ router.put('/signups/:id/approve', validate(approveSchema), async (req, res, nex
         ctaLabel: 'Sign in to your portal',
         ctaUrl: portalUrl,
       }),
-      text: `Your Get Hired UK account is approved. Sign in: ${portalUrl}`,
+      text: `Your Get Hired Global account is approved. Sign in: ${portalUrl}`,
     }).catch((err) => console.error('[approve] email failed:', err.message));
 
     res.json({ ok: true });
