@@ -16,6 +16,7 @@ import AdminClients from './pages/admin/Clients';
 import AdminLeaderboard from './pages/admin/Leaderboard';
 import AdminResources from './pages/admin/Resources';
 import AdminLeads from './pages/admin/Leads';
+import AdminSubscribers from './pages/admin/Subscribers';
 import AdminSignups from './pages/admin/Signups';
 import ClientDetail from './pages/admin/ClientDetail';
 import MyClients from './pages/employee/MyClients';
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/admin/leaderboard" element={<Protected roles={['admin']}><AdminLeaderboard /></Protected>} />
           <Route path="/admin/resources" element={<Protected roles={['admin']}><AdminResources /></Protected>} />
           <Route path="/admin/leads" element={<Protected roles={['admin']}><AdminLeads /></Protected>} />
+          <Route path="/admin/subscribers" element={<Protected roles={['admin']}><AdminSubscribers /></Protected>} />
           <Route path="/admin/team" element={<Protected roles={['admin']}><Team /></Protected>} />
           <Route path="/admin/chat" element={<Protected roles={['admin']}><Chat /></Protected>} />
           <Route path="/admin/employees/:id" element={<Protected roles={['admin']}><EmployeeDetail /></Protected>} />

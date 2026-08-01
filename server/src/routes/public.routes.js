@@ -89,4 +89,33 @@ router.post('/consultations', leadLimiter, validate(leadSchema), async (req, res
   }
 });
 
+// ---------- newsletter / email capture ----------
+
+const newsletterLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — please try again later.' },
+});
+
+const newsletterSchema = z.object({
+  email: z.string().email('Please enter a valid email').max(254),
+  source: z.string().max(40).optional().or(z.literal('')),
+});
+
+router.post('/newsletter', newsletterLimiter, validate(newsletterSchema), async (req, res, next) => {
+  try {
+    const email = req.body.email.toLowerCase();
+    // Upsert keeps it idempotent — a repeat sign-up is a no-op, never an error.
+    await prisma.newsletterSubscriber.upsert({
+      where: { email },
+      create: { email, source: req.body.source || null },
+      update: {},
+    });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

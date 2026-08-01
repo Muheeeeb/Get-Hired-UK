@@ -227,7 +227,7 @@ export default function ClientDetail() {
             <ul className="divide-y divide-ivory-dark">
               {dash.domains.map((domain) => (
                 <li key={domain.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-                  <span className="font-semibold text-navy-800">{domain.name}</span>
+                  <span className="min-w-0 break-words font-semibold text-navy-800">{domain.name}</span>
                   <div className="flex flex-wrap gap-2">
                     {domain.masterDocuments.length === 0 && <Badge tone="alert">No masters yet</Badge>}
                     {domain.masterDocuments.map((doc) => (

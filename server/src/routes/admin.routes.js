@@ -696,6 +696,19 @@ router.put(
   }
 );
 
+// ---------- newsletter subscribers (private — admins only) ----------
+
+router.get('/newsletter', async (req, res, next) => {
+  try {
+    const subscribers = await prisma.newsletterSubscriber.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ subscribers });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- overview ----------
 
 router.get('/overview', async (req, res, next) => {
