@@ -207,6 +207,9 @@ router.get('/post-image/:id', async (req, res, next) => {
     if (!buf) return res.status(404).end();
     res.setHeader('Content-Type', inlineContentType(post.coverImageKey) || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    // The marketing site (www) embeds these images from the API (api.*) origin;
+    // override Helmet's default same-origin CORP so the cross-origin <img> loads.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.end(buf);
   } catch (err) {
     next(err);
