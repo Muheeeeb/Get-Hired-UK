@@ -174,6 +174,27 @@ router.get('/posts/:slug', async (req, res, next) => {
   }
 });
 
+/** Dynamic sitemap of published posts (referenced from robots.txt). */
+router.get('/sitemap.xml', async (req, res, next) => {
+  try {
+    const base = env.primaryClientOrigin.replace(/\/$/, '');
+    const posts = await prisma.post.findMany({
+      where: { status: 'published' },
+      select: { slug: true, updatedAt: true },
+      orderBy: { publishedAt: 'desc' },
+      take: 1000,
+    });
+    const urls = posts
+      .map((p) => `<url><loc>${base}/post.html?slug=${encodeURIComponent(p.slug)}</loc><lastmod>${p.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`)
+      .join('');
+    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.end(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** Stream a published post's cover image (persists — signed URLs would expire). */
 router.get('/post-image/:id', async (req, res, next) => {
   try {
