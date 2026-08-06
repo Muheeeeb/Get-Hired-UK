@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import axios from 'axios';
 import {
   api, API_BASE, setAccessToken,
-  setSessionUid, clearSessionUid, isForeignSession,
+  setPortalRole, clearPortalRole, portalRoleHeader,
 } from '../api/client';
 
 const AuthContext = createContext(null);
@@ -11,22 +11,18 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
 
-  // Silent session restore via the refresh cookie (runs on every page load).
+  // Silent session restore via this portal's refresh cookie (runs on every page
+  // load). The tab tells the server which portal it is so the right cookie is used.
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await axios.post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true });
-        // If this tab remembers a different account than the cookie now points
-        // to, do NOT restore it — that would be the account-swap bug. Leave the
-        // tab logged out (but KEEP its bound identity, so every subsequent
-        // reload keeps refusing the wrong account) → guard redirects to login.
-        if (isForeignSession(data.user?.id)) {
-          setAccessToken(null);
-        } else {
-          setAccessToken(data.accessToken);
-          setSessionUid(data.user.id);
-          setUser(data.user);
-        }
+        const { data } = await axios.post(
+          `${API_BASE}/auth/refresh`, {},
+          { withCredentials: true, headers: portalRoleHeader() }
+        );
+        setAccessToken(data.accessToken);
+        setPortalRole(data.user.role);
+        setUser(data.user);
       } catch {
         // not logged in
       } finally {
@@ -36,10 +32,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // Session ended (refresh failed or a foreign account was refused). Drop the
-    // in-memory user, but leave the tab's bound identity intact — clearing it
-    // only on an explicit sign-out is what stops a later reload from adopting a
-    // different account that owns the shared cookie.
+    // Session ended (refresh failed). Drop the in-memory user for this tab.
     const onLogout = () => setUser(null);
     window.addEventListener('auth:logout', onLogout);
     return () => window.removeEventListener('auth:logout', onLogout);
@@ -48,17 +41,17 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
     setAccessToken(data.accessToken);
-    setSessionUid(data.user.id);
+    setPortalRole(data.user.role);
     setUser(data.user);
     return data.user;
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await api.post('/auth/logout');
+      await api.post('/auth/logout', {}, { headers: portalRoleHeader() });
     } finally {
       setAccessToken(null);
-      clearSessionUid();
+      clearPortalRole();
       setUser(null);
     }
   }, []);

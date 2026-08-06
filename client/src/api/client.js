@@ -9,46 +9,34 @@ export function setAccessToken(token) {
   accessToken = token;
 }
 
-// ---- per-tab identity guard --------------------------------------------------
-// The refresh_token cookie is shared across the whole browser, so if two
-// accounts are used in one browser the cookie ends up pointing at whichever
-// logged in last. Without a guard, a silent refresh (on token expiry OR page
-// reload) would adopt that OTHER account — the reported "refresh swaps me into
-// a different account" bug. We remember, PER TAB (sessionStorage survives
-// reloads but is isolated per tab), which user this tab belongs to and refuse
-// to adopt a refreshed session for a different user.
-const UID_KEY = 'gh_uid';
-export function setSessionUid(id) {
+// ---- per-portal session tracking --------------------------------------------
+// Refresh tokens are role-scoped cookies (gh_rt_<role>), so admin, employee and
+// client can all be signed in at once in one browser — a login in one portal no
+// longer overwrites another. Each tab remembers WHICH portal it is
+// (sessionStorage, isolated per tab); a brand-new tab falls back to the last-used
+// portal (localStorage) so a normal single-user reload still auto-restores. The
+// role is sent on refresh so the server rotates the correct cookie.
+const ROLE_KEY = 'gh_role';
+const LAST_ROLE_KEY = 'gh_last_role';
+export function setPortalRole(role) {
   try {
-    if (id) sessionStorage.setItem(UID_KEY, id);
+    if (role) { sessionStorage.setItem(ROLE_KEY, role); localStorage.setItem(LAST_ROLE_KEY, role); }
   } catch { /* private mode */ }
 }
-export function getSessionUid() {
+export function getPortalRole() {
   try {
-    return sessionStorage.getItem(UID_KEY);
+    return sessionStorage.getItem(ROLE_KEY) || localStorage.getItem(LAST_ROLE_KEY) || null;
   } catch {
     return null;
   }
 }
-export function clearSessionUid() {
-  try {
-    sessionStorage.removeItem(UID_KEY);
-  } catch { /* ignore */ }
+export function clearPortalRole() {
+  // Clear only THIS tab's binding — keep last-used so a fresh tab can still restore.
+  try { sessionStorage.removeItem(ROLE_KEY); } catch { /* ignore */ }
 }
-
-/** True if a refreshed session belongs to a different account than this tab. */
-export function isForeignSession(refreshedUserId) {
-  const expected = getSessionUid();
-  const foreign = Boolean(expected && refreshedUserId && refreshedUserId !== expected);
-  if (foreign) {
-    try {
-      sessionStorage.setItem(
-        'gh_signout_reason',
-        'You were signed out because a different account was used in this browser. Please sign in again.'
-      );
-    } catch { /* ignore */ }
-  }
-  return foreign;
+export function portalRoleHeader() {
+  const role = getPortalRole();
+  return role ? { 'X-Portal-Role': role } : {};
 }
 
 export function takeSignoutReason() {
@@ -83,20 +71,12 @@ api.interceptors.response.use(
       try {
         refreshPromise =
           refreshPromise ||
-          axios.post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true });
+          axios.post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true, headers: portalRoleHeader() });
         const { data } = await refreshPromise;
         refreshPromise = null;
 
-        // The shared cookie now belongs to a DIFFERENT account (another tab
-        // logged in). Never silently swap — sign this tab out cleanly instead.
-        if (isForeignSession(data.user?.id)) {
-          setAccessToken(null);
-          window.dispatchEvent(new Event('auth:logout'));
-          throw new Error('Session changed');
-        }
-
         setAccessToken(data.accessToken);
-        if (data.user?.id) setSessionUid(data.user.id);
+        setPortalRole(data.user?.role);
         original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch (refreshErr) {

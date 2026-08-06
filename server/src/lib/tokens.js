@@ -77,3 +77,18 @@ export const refreshCookieOptions = {
   path: '/auth',
   maxAge: env.refreshTokenTtlDays * 24 * 60 * 60 * 1000,
 };
+
+/**
+ * Refresh tokens are scoped per role so the three portals can be signed in at
+ * the same time in one browser. Each login writes its own cookie
+ * (gh_rt_admin / gh_rt_employee / gh_rt_client / gh_rt_social) instead of a
+ * single shared "refresh_token" that logins would overwrite. LEGACY_REFRESH_COOKIE
+ * is the old single-cookie name, kept only so sessions created before this change
+ * survive one more refresh (then get migrated to the role-scoped name).
+ */
+export const VALID_PORTAL_ROLES = ['admin', 'employee', 'client', 'social'];
+export const LEGACY_REFRESH_COOKIE = 'refresh_token';
+export function refreshCookieName(role) {
+  const r = VALID_PORTAL_ROLES.includes(role) ? role : 'client';
+  return `gh_rt_${r}`;
+}
