@@ -13,6 +13,7 @@ function navFor(user) {
       { to: '/admin/leaderboard', label: 'Leaderboard', icon: '🏆' },
       { to: '/admin/signups', label: 'Sign-ups', icon: '✍️' },
       { to: '/admin/leads', label: 'Leads', icon: '📥' },
+      { to: '/admin/subscribers', label: 'Subscribers', icon: '✉️' },
       { to: '/admin/resources', label: 'Prep Hub', icon: '🎓' },
       { to: '/admin/chat', label: 'Chat', icon: '💬', chat: true },
       ...(user.isLead ? [{ to: '/admin/team', label: 'Team', icon: '🛡️' }] : []),
@@ -286,7 +287,20 @@ function ClientProfile({ requiredProfile, onComplete }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  useEffect(() => { api.get('/clients/me/profile').then((r) => setForm(r.data.profile)).catch((err) => setError(errorMessage(err))); }, []);
+  useEffect(() => {
+    api.get('/clients/me/profile').then((r) => {
+      const p = r.data.profile;
+      // Normalise for the form: notes must never be null (the box would submit
+      // null and fail validation), and the date fields must be YYYY-MM-DD so a
+      // re-save of an existing profile doesn't send a full ISO timestamp.
+      setForm({
+        ...p,
+        dateOfBirth: p.dateOfBirth ? p.dateOfBirth.slice(0, 10) : '',
+        visaExpiryDate: p.visaExpiryDate ? p.visaExpiryDate.slice(0, 10) : '',
+        notes: p.notes ?? '',
+      });
+    }).catch((err) => setError(errorMessage(err)));
+  }, []);
   if (!form) return <div className="mb-5 text-sm text-ink-soft">Loading your profile…</div>;
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   async function save(e) {

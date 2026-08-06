@@ -342,6 +342,17 @@ model ConsultationRequest {
   @@map("consultation_requests")
 }
 
+/// Email captures from the public site (newsletter / CTA). Email is unique so
+/// re-subscribing is idempotent. Only admins can read these.
+model NewsletterSubscriber {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  source    String? // where they subscribed from, e.g. "cta"
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("newsletter_subscribers")
+}
+
 model PasswordResetToken {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @map("user_id") @db.Uuid

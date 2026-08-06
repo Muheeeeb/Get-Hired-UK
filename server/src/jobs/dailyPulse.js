@@ -63,7 +63,9 @@ export async function runDailyPulse() {
           heading: jobCount > 0 ? `${jobCount} Applications Today` : 'Momentum Building',
           bodyHtml,
           ctaLabel: 'View My Dashboard',
-          ctaUrl: env.clientOrigin,
+          // Use the first origin only — CLIENT_ORIGIN can be a comma-separated
+          // CORS allowlist, which would otherwise produce a broken link.
+          ctaUrl: env.primaryClientOrigin,
         }),
         text: subject,
       });

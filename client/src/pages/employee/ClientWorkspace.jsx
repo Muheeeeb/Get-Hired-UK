@@ -235,7 +235,7 @@ function MastersTab({ clientId, dash, onChanged }) {
       <ul className="divide-y divide-ivory-dark">
         {dash.domains.map((domain) => (
           <li key={domain.id} className="px-6 py-5">
-            <div className="font-display text-lg text-navy-800">{domain.name}</div>
+            <div className="break-words font-display text-lg text-navy-800">{domain.name}</div>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               {['master_cv', 'master_cover_letter'].map((type) => {
                 const existing = domain.masterDocuments.find((d) => d.type === type);

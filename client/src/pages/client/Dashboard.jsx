@@ -143,7 +143,7 @@ export default function ClientDashboard() {
                 <ul className="divide-y divide-ivory-dark">
                   {data.domains.map((domain) => (
                     <li key={domain.id} className="px-6 py-4">
-                      <div className="font-semibold text-navy-800">{domain.name}</div>
+                      <div className="break-words font-semibold text-navy-800">{domain.name}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {domain.masterDocuments.length === 0 && (
                           <span className="text-xs text-ink-soft">In production…</span>

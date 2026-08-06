@@ -19,7 +19,9 @@ const profileSchema = z.object({
   residentialAddress: z.string().min(5).max(2000),
   postcode: z.string().min(2).max(30),
   phone: z.string().min(5).max(40),
-  notes: z.string().max(2000).optional().or(z.literal('')),
+  // Optional: accept a string, empty string, null, or missing (the write below
+  // coalesces any falsy value to null).
+  notes: z.string().max(2000).nullish(),
 });
 
 // This endpoint deliberately uses the caller rather than a supplied ID: clients

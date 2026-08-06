@@ -1451,7 +1451,7 @@
     <p class="fc-eyebrow">Ready when you are</p>
     <h2>Your next role is one account away.</h2>
     <p class="fc-sub">Stop firing CVs into the void. Create your account and let our specialists apply, optimise and prep &mdash; while you show up for the interviews.</p>
-    <form class="cta-signup" onsubmit="event.preventDefault(); window.top.location.href='/signup';">
+    <form class="cta-signup">
       <input type="email" placeholder="Enter your email" required aria-label="Email address">
       <button type="submit">Sign up &rarr;</button>
     </form>
@@ -1662,11 +1662,13 @@
 <script>
   /* Consultation form → our own backend (no third-party services). */
   (function () {
-    var form = document.getElementById('consult-form');
-    if (!form) return;
     var API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
       ? 'http://localhost:4000'
       : 'https://api.gethired.world';
+
+    // Consultation form → our own backend (no third-party services).
+    var form = document.getElementById('consult-form');
+    if (form) {
     var status = document.getElementById('consult-status');
     var btn = form.querySelector('.btn-gold');
     form.addEventListener('submit', async function (e) {
@@ -1700,6 +1702,30 @@
         status.textContent = err.message || 'Could not send — please try again.';
       }
     });
+    }
+
+    // Final-CTA email box: capture the address as a subscriber (so no enquiry is
+    // lost), then continue to sign-up. keepalive lets the request finish even as
+    // the page navigates away.
+    var cta = document.querySelector('.cta-signup');
+    if (cta) {
+      cta.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var input = cta.querySelector('input[type=email]');
+        var ctaEmail = (input && input.value || '').trim();
+        if (ctaEmail) {
+          try {
+            fetch(API + '/public/newsletter', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: ctaEmail, source: 'cta' }),
+              keepalive: true
+            }).catch(function () {});
+          } catch (err) { /* never block the redirect */ }
+        }
+        window.top.location.href = '/signup';
+      });
+    }
   })();
 </script>
 </body>
