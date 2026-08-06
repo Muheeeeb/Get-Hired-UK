@@ -199,10 +199,11 @@ model ClientProfile {
 
   user             User             @relation("ClientUser", fields: [userId], references: [id])
   assignedEmployee User?            @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
-  domains           Domain[]
-  jobApplications   JobApplication[]
-  dailyPulseLogs    DailyPulseLog[]
-  interviewSessions InterviewSession[]
+  domains            Domain[]
+  jobApplications    JobApplication[]
+  dailyPulseLogs     DailyPulseLog[]
+  interviewSessions  InterviewSession[]
+  interviewResources InterviewResource[]
 
   @@map("client_profiles")
 }
@@ -280,11 +281,14 @@ model InterviewResource {
   fileKey     String?  @map("file_key")
   fileName    String?  @map("file_name")
   tipText     String?  @map("tip_text")
+  // When set, this resource is private to one client's portal. Null = shown to all.
+  clientId    String?  @map("client_id") @db.Uuid
   createdById String   @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  createdBy User @relation("ResourceCreator", fields: [createdById], references: [id])
+  createdBy User           @relation("ResourceCreator", fields: [createdById], references: [id])
+  client    ClientProfile? @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@map("interview_resources")
 }

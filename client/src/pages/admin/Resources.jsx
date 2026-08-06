@@ -18,7 +18,7 @@ export default function AdminResources() {
   const [sessError, setSessError] = useState(null);
   const [error, setError] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', tipText: '' });
+  const [form, setForm] = useState({ title: '', description: '', tipText: '', clientId: '' });
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -75,10 +75,11 @@ export default function AdminResources() {
       fd.append('title', form.title);
       fd.append('description', form.description);
       if (form.tipText.trim()) fd.append('tipText', form.tipText.trim());
+      if (form.clientId) fd.append('clientId', form.clientId);
       if (file) fd.append('file', file);
       await api.post('/interview-resources', fd);
       setShowCreate(false);
-      setForm({ title: '', description: '', tipText: '' });
+      setForm({ title: '', description: '', tipText: '', clientId: '' });
       setFile(null);
       if (fileRef.current) fileRef.current.value = '';
       load();
@@ -113,9 +114,10 @@ export default function AdminResources() {
               {resources.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-start justify-between gap-3 px-6 py-4">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-navy-800">{r.title}</span>
                       {r.hasFile && <Badge tone="gold">📎 File</Badge>}
+                      {r.clientName ? <Badge tone="navy">🔒 {r.clientName}</Badge> : <Badge tone="success">Everyone</Badge>}
                     </div>
                     <p className="mt-0.5 text-sm text-ink-soft">{r.description}</p>
                     {r.tipText && <p className="mt-1 text-sm text-ink line-clamp-2">💡 {r.tipText}</p>}
@@ -215,6 +217,11 @@ export default function AdminResources() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New resource" wide>
         <form onSubmit={create} className="space-y-4">
+          <Select id="r-client" label="Show to" value={form.clientId}
+            onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+            <option value="">All clients</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.user.fullName}</option>)}
+          </Select>
           <Input id="r-title" label="Title" required value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <Input id="r-desc" label="Description" required value={form.description}

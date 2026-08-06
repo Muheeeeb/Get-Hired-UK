@@ -161,9 +161,12 @@ export default function AdminSignups() {
             domains later from <strong className="text-navy-800">{approving?.email}</strong>'s client page.
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Input id="a-package" label="Package type (optional)" list="signup-package-options" value={form.packageType}
-              onChange={(e) => setForm({ ...form, packageType: e.target.value })} />
-            <datalist id="signup-package-options">{packageChoices.map((choice) => <option key={choice} value={choice} />)}</datalist>
+            <Select id="a-package" label="Package type" value={form.packageType}
+              onChange={(e) => setForm({ ...form, packageType: e.target.value })}>
+              <option value="">— To be agreed —</option>
+              {(!form.packageType || packageChoices.includes(form.packageType) ? packageChoices : [form.packageType, ...packageChoices])
+                .filter(Boolean).map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
             <Input id="a-expiry" label="Expiry date (optional)" type="date" value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             <Input id="a-target" label="Monthly target (optional)" type="number" min={1} max={2000}

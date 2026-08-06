@@ -15,16 +15,33 @@ const upload = multer({
 /** Interview Prep Hub — readable by every authenticated role. */
 router.get('/', authenticate, async (req, res, next) => {
   try {
+    let where = {};
+    if (req.user.role === 'client') {
+      // Clients only ever see global resources (clientId null) plus ones
+      // targeted specifically at them.
+      const profile = await prisma.clientProfile.findUnique({
+        where: { userId: req.user.id },
+        select: { id: true },
+      });
+      where = { OR: [{ clientId: null }, ...(profile ? [{ clientId: profile.id }] : [])] };
+    }
     const resources = await prisma.interviewResource.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, title: true, description: true, tipText: true,
-        fileName: true, createdAt: true, fileKey: true,
+        fileName: true, createdAt: true, fileKey: true, clientId: true,
+        client: { select: { user: { select: { fullName: true } } } },
       },
     });
     // Expose only whether a file exists — actual access goes through /files/:id/signed-url.
     res.json({
-      resources: resources.map(({ fileKey, ...r }) => ({ ...r, hasFile: Boolean(fileKey) })),
+      resources: resources.map(({ fileKey, client, ...r }) => ({
+        ...r,
+        hasFile: Boolean(fileKey),
+        // For admin/employee list: who the resource is for (null = everyone).
+        clientName: client?.user?.fullName || null,
+      })),
     });
   } catch (err) {
     next(err);
@@ -35,6 +52,7 @@ const createSchema = z.object({
   title: z.string().min(2).max(160),
   description: z.string().min(2).max(1000),
   tipText: z.string().max(4000).optional(),
+  clientId: z.string().uuid().optional().or(z.literal('')),
 });
 
 /** Admin/employee post guides and tips for clients. */
@@ -47,6 +65,13 @@ router.post(
     try {
       const parsed = createSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: 'title and description are required' });
+
+      // Optional client target — validate it exists before saving.
+      const clientId = parsed.data.clientId || null;
+      if (clientId) {
+        const exists = await prisma.clientProfile.findUnique({ where: { id: clientId }, select: { id: true } });
+        if (!exists) return res.status(400).json({ error: 'Selected client not found' });
+      }
 
       let fileKey = null;
       let fileName = null;
@@ -61,13 +86,19 @@ router.post(
           title: parsed.data.title,
           description: parsed.data.description,
           tipText: parsed.data.tipText || null,
+          clientId,
           fileKey,
           fileName,
           createdById: req.user.id,
         },
-        select: { id: true, title: true, description: true, tipText: true, fileName: true, createdAt: true },
+        select: {
+          id: true, title: true, description: true, tipText: true, fileName: true, createdAt: true, clientId: true,
+          client: { select: { user: { select: { fullName: true } } } },
+        },
       });
-      res.status(201).json({ resource: { ...resource, hasFile: Boolean(fileKey) } });
+      res.status(201).json({
+        resource: { ...resource, client: undefined, clientName: resource.client?.user?.fullName || null, hasFile: Boolean(fileKey) },
+      });
     } catch (err) {
       next(err);
     }

@@ -15,6 +15,7 @@ function navFor(user) {
       { to: '/admin/leads', label: 'Leads', icon: '📥' },
       { to: '/admin/subscribers', label: 'Subscribers', icon: '✉️' },
       { to: '/admin/resources', label: 'Prep Hub', icon: '🎓' },
+      { to: '/employee/ai-studio', label: 'AI Studio', icon: '✨' },
       { to: '/admin/chat', label: 'Chat', icon: '💬', chat: true },
       ...(user.isLead ? [{ to: '/admin/team', label: 'Team', icon: '🛡️' }] : []),
     ];
