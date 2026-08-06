@@ -137,11 +137,11 @@ export default function AdminClients() {
             value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <Input id="c-package" label="Package type" required list="package-options" value={form.packageType}
-                onChange={(e) => setForm({ ...form, packageType: e.target.value })} />
-              <datalist id="package-options">
-                {packageChoices.map((c) => <option key={c} value={c} />)}
-              </datalist>
+              <Select id="c-package" label="Package type" required value={form.packageType}
+                onChange={(e) => setForm({ ...form, packageType: e.target.value })}>
+                {(packageChoices.includes(form.packageType) ? packageChoices : [form.packageType, ...packageChoices])
+                  .filter(Boolean).map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
             </div>
             <Input id="c-expiry" label="Expiry date" type="date" required value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />

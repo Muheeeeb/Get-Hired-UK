@@ -15,6 +15,7 @@ import interviewRoutes from './routes/interview.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import chatRoutes from './routes/chat.routes.js';
 import sessionsRoutes from './routes/sessions.routes.js';
+import contentRoutes from './routes/content.routes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 export function createApp() {
@@ -55,6 +56,7 @@ export function createApp() {
   app.use('/public', publicRoutes);
   app.use('/chat', chatRoutes);
   app.use('/interview-sessions', sessionsRoutes);
+  app.use('/content', contentRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

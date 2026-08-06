@@ -12,6 +12,9 @@ import {
   rotateRefreshToken,
   revokeRefreshToken,
   refreshCookieOptions,
+  refreshCookieName,
+  LEGACY_REFRESH_COOKIE,
+  VALID_PORTAL_ROLES,
 } from '../lib/tokens.js';
 import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
@@ -20,6 +23,14 @@ import { startSession, endSession } from '../lib/sessions.js';
 function hashToken(raw) {
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
+
+// The portal a request is acting as, from the X-Portal-Role header the SPA sends
+// on refresh/logout. Determines WHICH role-scoped refresh cookie we touch.
+function portalRoleFromReq(req) {
+  const r = (req.get('x-portal-role') || '').toLowerCase();
+  return VALID_PORTAL_ROLES.includes(r) ? r : null;
+}
+const clearOpts = { ...refreshCookieOptions, maxAge: undefined };
 
 async function sendVerificationEmail(user) {
   const raw = crypto.randomBytes(32).toString('base64url');
@@ -91,7 +102,8 @@ router.post('/login', loginLimiter, validate(loginSchema), async (req, res, next
     const accessToken = signAccessToken(user);
     const { raw: refreshToken } = await issueRefreshToken(user.id);
 
-    res.cookie('refresh_token', refreshToken, refreshCookieOptions);
+    // Role-scoped cookie so a login in one portal never signs out another.
+    res.cookie(refreshCookieName(user.role), refreshToken, refreshCookieOptions);
     res.json({
       accessToken,
       user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, isLead: user.isLead, phone: user.phone, designation: user.designation },
@@ -235,12 +247,17 @@ router.post(
 
 router.post('/refresh', async (req, res, next) => {
   try {
-    const raw = req.cookies?.refresh_token;
+    const role = portalRoleFromReq(req);
+    // Prefer this portal's role-scoped cookie; fall back to the legacy shared
+    // cookie so sessions created before this change survive one more refresh.
+    const raw =
+      (role && req.cookies?.[refreshCookieName(role)]) || req.cookies?.[LEGACY_REFRESH_COOKIE];
     if (!raw) return res.status(401).json({ error: 'No refresh token' });
 
     const rotated = await rotateRefreshToken(raw);
     if (!rotated) {
-      res.clearCookie('refresh_token', { ...refreshCookieOptions, maxAge: undefined });
+      if (role) res.clearCookie(refreshCookieName(role), clearOpts);
+      res.clearCookie(LEGACY_REFRESH_COOKIE, clearOpts);
       return res.status(401).json({ error: 'Invalid refresh token' });
     }
 
@@ -249,7 +266,9 @@ router.post('/refresh', async (req, res, next) => {
       return res.status(401).json({ error: 'Account is not active' });
     }
 
-    res.cookie('refresh_token', rotated.raw, refreshCookieOptions);
+    // Always (re)write the role-scoped cookie and retire the legacy one.
+    res.cookie(refreshCookieName(user.role), rotated.raw, refreshCookieOptions);
+    if (req.cookies?.[LEGACY_REFRESH_COOKIE]) res.clearCookie(LEGACY_REFRESH_COOKIE, clearOpts);
     res.json({
       accessToken: signAccessToken(user),
       user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, isLead: user.isLead, phone: user.phone, designation: user.designation },
@@ -261,8 +280,10 @@ router.post('/refresh', async (req, res, next) => {
 
 router.post('/logout', async (req, res, next) => {
   try {
-    // Best-effort: close the working-time session for whoever this token belongs to.
-    const raw = req.cookies?.refresh_token;
+    const role = portalRoleFromReq(req);
+    // Only this portal's token — logging out of one portal must not touch others.
+    const raw =
+      (role && req.cookies?.[refreshCookieName(role)]) || req.cookies?.[LEGACY_REFRESH_COOKIE];
     if (raw) {
       const record = await prisma.refreshToken.findUnique({
         where: { tokenHash: hashToken(raw) },
@@ -271,7 +292,8 @@ router.post('/logout', async (req, res, next) => {
       if (record) endSession(record.userId);
     }
     await revokeRefreshToken(raw);
-    res.clearCookie('refresh_token', { ...refreshCookieOptions, maxAge: undefined });
+    if (role) res.clearCookie(refreshCookieName(role), clearOpts);
+    res.clearCookie(LEGACY_REFRESH_COOKIE, clearOpts);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -306,7 +328,7 @@ router.post(
         }),
       ]);
       const { raw: refreshToken } = await issueRefreshToken(req.user.id);
-      res.cookie('refresh_token', refreshToken, refreshCookieOptions);
+      res.cookie(refreshCookieName(req.user.role), refreshToken, refreshCookieOptions);
       res.json({ ok: true });
     } catch (err) {
       next(err);

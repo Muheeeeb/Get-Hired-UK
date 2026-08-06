@@ -21,9 +21,12 @@ export function DownloadButton({ docId, label = 'Download', className = '' }) {
       if (tab) {
         tab.location.replace(data.url);
       } else {
-        // Popup fully blocked — fall back to same-tab navigation via anchor.
+        // Popup blocked — open in a NEW tab via anchor. Never navigate the app
+        // tab itself away, otherwise pressing Back re-loads the SPA and (until
+        // the silent refresh completes) briefly shows the login page.
         const a = document.createElement('a');
         a.href = data.url;
+        a.target = '_blank';
         a.rel = 'noopener';
         document.body.appendChild(a);
         a.click();

@@ -22,9 +22,11 @@ import ClientDetail from './pages/admin/ClientDetail';
 import MyClients from './pages/employee/MyClients';
 import ClientWorkspace from './pages/employee/ClientWorkspace';
 import ClientDashboard from './pages/client/Dashboard';
+import SocialStudio from './pages/social/Studio';
+import AdminSocialTeam from './pages/admin/SocialTeam';
 import { Skeleton } from './components/ui';
 
-const HOME = { admin: '/admin', employee: '/employee', client: '/client' };
+const HOME = { admin: '/admin', employee: '/employee', client: '/client', social: '/social' };
 
 function Protected({ roles, children }) {
   const { user, booting } = useAuth();
@@ -67,6 +69,9 @@ export default function App() {
           <Route path="/admin/chat" element={<Protected roles={['admin']}><Chat /></Protected>} />
           <Route path="/admin/employees/:id" element={<Protected roles={['admin']}><EmployeeDetail /></Protected>} />
           <Route path="/admin/signups" element={<Protected roles={['admin']}><AdminSignups /></Protected>} />
+          <Route path="/admin/social-team" element={<Protected roles={['admin']}><AdminSocialTeam /></Protected>} />
+
+          <Route path="/social" element={<Protected roles={['social', 'admin']}><SocialStudio /></Protected>} />
 
           <Route path="/employee" element={<Protected roles={['employee', 'admin']}><MyClients /></Protected>} />
           <Route path="/employee/clients/:id" element={<Protected roles={['employee', 'admin']}><ClientWorkspace /></Protected>} />

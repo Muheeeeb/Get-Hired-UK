@@ -4,7 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Button, Input, PasswordInput, Spinner } from '../components/ui';
 import { api, errorMessage, takeSignoutReason } from '../api/client';
 
-const HOME = { admin: '/admin', employee: '/employee', client: '/client' };
+const HOME = { admin: '/admin', employee: '/employee', client: '/client', social: '/social' };
 
 export default function Login() {
   const { login } = useAuth();

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /employee
+Disallow: /client
+Disallow: /social
+
+Sitemap: https://www.gethired.world/sitemap.xml
+Sitemap: https://api.gethired.world/public/sitemap.xml

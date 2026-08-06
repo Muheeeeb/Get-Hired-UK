@@ -7,6 +7,7 @@ import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
 import { startOfMonth } from '../utils/dates.js';
 import { PACKAGES } from '../config/packages.js';
+import { readFileBuffer, inlineContentType } from '../lib/storage.js';
 
 const router = Router();
 
@@ -113,6 +114,103 @@ router.post('/newsletter', newsletterLimiter, validate(newsletterSchema), async 
       update: {},
     });
     res.status(201).json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- published content (blog / success stories / insights) ----------
+
+const TYPES = ['blog', 'story', 'insight'];
+
+/** List published posts, optionally by type. Never returns drafts or bodies. */
+router.get('/posts', async (req, res, next) => {
+  try {
+    const where = { status: 'published' };
+    if (TYPES.includes(req.query.type)) where.type = req.query.type;
+    const take = Math.min(Number(req.query.limit) || 50, 100);
+    const posts = await prisma.post.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }],
+      take,
+      select: {
+        id: true, type: true, title: true, slug: true, category: true, summary: true,
+        publishedAt: true, coverImageKey: true, author: { select: { fullName: true } },
+      },
+    });
+    res.json({
+      posts: posts.map(({ coverImageKey, author, ...p }) => ({
+        ...p,
+        authorName: author?.fullName || null,
+        coverUrl: coverImageKey ? `${env.appBaseUrl}/public/post-image/${p.id}` : null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** A single published post by slug — includes the (sanitised) body. */
+router.get('/posts/:slug', async (req, res, next) => {
+  try {
+    const post = await prisma.post.findFirst({
+      where: { slug: req.params.slug, status: 'published' },
+      select: {
+        id: true, type: true, title: true, slug: true, category: true, summary: true,
+        body: true, publishedAt: true, coverImageKey: true, author: { select: { fullName: true } },
+      },
+    });
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    const { coverImageKey, author, ...rest } = post;
+    res.json({
+      post: {
+        ...rest,
+        authorName: author?.fullName || null,
+        coverUrl: coverImageKey ? `${env.appBaseUrl}/public/post-image/${post.id}` : null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Dynamic sitemap of published posts (referenced from robots.txt). */
+router.get('/sitemap.xml', async (req, res, next) => {
+  try {
+    const base = env.primaryClientOrigin.replace(/\/$/, '');
+    const posts = await prisma.post.findMany({
+      where: { status: 'published' },
+      select: { slug: true, updatedAt: true },
+      orderBy: { publishedAt: 'desc' },
+      take: 1000,
+    });
+    const urls = posts
+      .map((p) => `<url><loc>${base}/post.html?slug=${encodeURIComponent(p.slug)}</loc><lastmod>${p.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`)
+      .join('');
+    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.end(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Stream a published post's cover image (persists — signed URLs would expire). */
+router.get('/post-image/:id', async (req, res, next) => {
+  try {
+    const post = await prisma.post.findUnique({
+      where: { id: req.params.id },
+      select: { coverImageKey: true, status: true },
+    });
+    if (!post || post.status !== 'published' || !post.coverImageKey) return res.status(404).end();
+    const buf = await readFileBuffer(post.coverImageKey);
+    if (!buf) return res.status(404).end();
+    res.setHeader('Content-Type', inlineContentType(post.coverImageKey) || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    // The marketing site (www) embeds these images from the API (api.*) origin;
+    // override Helmet's default same-origin CORP so the cross-origin <img> loads.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.end(buf);
   } catch (err) {
     next(err);
   }

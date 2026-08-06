@@ -266,6 +266,78 @@ router.delete('/employees/:id', async (req, res, next) => {
   }
 });
 
+// ---------- social media staff (Social Media Marketing Portal) ----------
+
+router.post(
+  '/social-users',
+  validate(z.object({
+    fullName: z.string().min(2).max(120),
+    email: z.string().email().max(254),
+    password: passwordSchema,
+  })),
+  async (req, res, next) => {
+    try {
+      const { fullName, email, password } = req.body;
+      const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+      if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
+      const user = await prisma.user.create({
+        data: { fullName, email: email.toLowerCase(), passwordHash: await bcrypt.hash(password, 12), role: 'social' },
+        select: { id: true, fullName: true, email: true, role: true, isActive: true, createdAt: true },
+      });
+      res.status(201).json({ user });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.get('/social-users', async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { role: 'social', deletedAt: null },
+      select: {
+        id: true, fullName: true, email: true, isActive: true, lastLoginAt: true, createdAt: true,
+        _count: { select: { posts: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ users });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put(
+  '/social-users/:id/status',
+  validate(z.object({ isActive: z.boolean() })),
+  async (req, res, next) => {
+    try {
+      const user = await prisma.user.findFirst({ where: { id: req.params.id, role: 'social', deletedAt: null } });
+      if (!user) return res.status(404).json({ error: 'Account not found' });
+      const updated = await prisma.user.update({
+        where: { id: user.id }, data: { isActive: req.body.isActive }, select: { id: true, isActive: true },
+      });
+      res.json({ user: updated });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/** Delete a social account; their posts are reassigned to the deleting admin so
+ *  published content survives. */
+router.delete('/social-users/:id', async (req, res, next) => {
+  try {
+    const user = await prisma.user.findFirst({ where: { id: req.params.id, role: 'social', deletedAt: null } });
+    if (!user) return res.status(404).json({ error: 'Account not found' });
+    await prisma.post.updateMany({ where: { authorId: user.id }, data: { authorId: req.user.id } });
+    await hardDeleteUser(user.id, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- clients ----------
 
 const createClientSchema = z.object({

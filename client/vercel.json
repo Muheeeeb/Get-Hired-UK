@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/((?!assets/|marketing/|favicon|logo-mark|get-hired-global).*)", "destination": "/index.html" }
+    { "source": "/((?!assets/|marketing/|favicon|logo-mark|get-hired-global|blog|success-stories|insights|post|sitemap|robots).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

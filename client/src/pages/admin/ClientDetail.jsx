@@ -19,6 +19,7 @@ export default function ClientDetail() {
 
   const [pkg, setPkg] = useState(null);
   const [domainsDraft, setDomainsDraft] = useState(null);
+  const [packageChoices, setPackageChoices] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +46,10 @@ export default function ClientDetail() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    api.get('/admin/package-choices').then((r) => setPackageChoices(r.data.choices)).catch(() => {});
+  }, []);
 
   function flash(msg) {
     setNotice(msg);
@@ -171,8 +176,13 @@ export default function ClientDetail() {
             <Card>
               <CardHeader title="Package & Assignment" />
               <form onSubmit={savePackage} className="space-y-4 p-6">
-                <Input id="pkg-type" label="Package type" value={pkg.packageType}
-                  onChange={(e) => setPkg({ ...pkg, packageType: e.target.value })} />
+                <Select id="pkg-type" label="Package type" value={pkg.packageType || ''}
+                  onChange={(e) => setPkg({ ...pkg, packageType: e.target.value })}>
+                  {pkg.packageType && !packageChoices.includes(pkg.packageType) && (
+                    <option value={pkg.packageType}>{pkg.packageType}</option>
+                  )}
+                  {packageChoices.map((c) => <option key={c} value={c}>{c}</option>)}
+                </Select>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Input id="pkg-expiry" label="Expiry date" type="date" value={pkg.expiryDate}
                     onChange={(e) => setPkg({ ...pkg, expiryDate: e.target.value })} />
