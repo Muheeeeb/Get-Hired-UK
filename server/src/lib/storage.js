@@ -148,6 +148,24 @@ export async function deleteFile(key) {
   }
 }
 
+/** Reads the raw bytes of a stored file (both drivers). Used to stream public
+ *  post cover images, which must persist (signed URLs expire). */
+export async function readFileBuffer(key) {
+  if (env.storageDriver === 's3') {
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const client = await getS3();
+    const out = await client.send(new GetObjectCommand({ Bucket: env.aws.bucket, Key: key }));
+    return Buffer.from(await out.Body.transformToByteArray());
+  }
+  const filePath = resolveLocalPath(key);
+  if (!filePath) return null;
+  try {
+    return await fs.readFile(filePath);
+  } catch {
+    return null;
+  }
+}
+
 /** Reads file text for the AI assistant (local driver or seed .txt masters only). */
 export async function tryReadFileText(key) {
   try {

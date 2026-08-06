@@ -11,6 +11,18 @@ enum Role {
   admin
   employee
   client
+  social
+}
+
+enum PostType {
+  blog
+  story
+  insight
+}
+
+enum PostStatus {
+  draft
+  published
 }
 
 enum LinkedinStatus {
@@ -56,6 +68,7 @@ model User {
   masterUploads      MasterDocument[]    @relation("MasterUploader")
   tailoredUploads    TailoredDocument[]  @relation("TailoredUploader")
   interviewResources InterviewResource[] @relation("ResourceCreator")
+  posts              Post[]              @relation("PostAuthor")
   refreshTokens      RefreshToken[]
   passwordResets     PasswordResetToken[]
   emailVerifications EmailVerificationToken[]
@@ -355,6 +368,30 @@ model NewsletterSubscriber {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("newsletter_subscribers")
+}
+
+/// CMS content authored in the Social Media portal and shown on the public site.
+/// One model covers Blog posts, Success Stories and Insights (distinguished by
+/// `type`). Only `published` rows are ever exposed publicly; `draft` stays private.
+model Post {
+  id            String     @id @default(uuid()) @db.Uuid
+  type          PostType
+  title         String
+  slug          String     @unique
+  category      String?
+  summary       String?
+  body          String // rich HTML from the editor
+  coverImageKey String?    @map("cover_image_key")
+  status        PostStatus @default(draft)
+  authorId      String     @map("author_id") @db.Uuid
+  publishedAt   DateTime?  @map("published_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  author User @relation("PostAuthor", fields: [authorId], references: [id])
+
+  @@index([type, status, publishedAt])
+  @@map("posts")
 }
 
 model PasswordResetToken {

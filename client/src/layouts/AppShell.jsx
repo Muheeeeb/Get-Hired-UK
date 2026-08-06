@@ -16,6 +16,9 @@ function navFor(user) {
       { to: '/admin/subscribers', label: 'Subscribers', icon: '✉️' },
       { to: '/admin/resources', label: 'Prep Hub', icon: '🎓' },
       { to: '/employee/ai-studio', label: 'AI Studio', icon: '✨' },
+      // Social Media Marketing portal — admins have the full social feature set too.
+      { to: '/social', label: 'Content Studio', icon: '📝' },
+      { to: '/admin/social-team', label: 'Social Team', icon: '🖋️' },
       { to: '/admin/chat', label: 'Chat', icon: '💬', chat: true },
       ...(user.isLead ? [{ to: '/admin/team', label: 'Team', icon: '🛡️' }] : []),
     ];
@@ -25,6 +28,11 @@ function navFor(user) {
       { to: '/employee', label: 'My Clients', icon: '👤', end: true },
       { to: '/employee/ai-studio', label: 'AI Studio', icon: '✨' },
       { to: '/employee/chat', label: 'Chat', icon: '💬', chat: true },
+    ];
+  }
+  if (user?.role === 'social') {
+    return [
+      { to: '/social', label: 'Content Studio', icon: '📝', end: true },
     ];
   }
   return [
