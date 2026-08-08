@@ -6,6 +6,7 @@ import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select } 
 import { JobTable } from '../../components/JobTable';
 import { DownloadButton, formatDate } from '../../components/files';
 import { LinkedInStepper } from '../../components/LinkedInStepper';
+import { ClientCredentials } from '../../components/ClientCredentials';
 
 /** Admin client detail — sees everything: package, domains, masters, jobs + tailored files. */
 export default function ClientDetail() {
@@ -231,6 +232,8 @@ export default function ClientDetail() {
               </div>
             </Card>
           </div>
+
+          <ClientCredentials clientId={id} canViewLog />
 
           <Card className="mt-6">
             <CardHeader title="Master Documents" subtitle="Visible to the client" />

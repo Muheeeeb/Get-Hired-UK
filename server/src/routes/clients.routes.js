@@ -6,6 +6,7 @@ import { authenticate, authorizeRole, loadClientScope } from '../middleware/auth
 import { validate } from '../middleware/validate.js';
 import { buildFileKey, saveFile, deleteFile } from '../lib/storage.js';
 import { startOfMonth, daysUntil, dateOnly } from '../utils/dates.js';
+import { encryptSecret, decryptSecret, credentialsEnabled } from '../lib/secrets.js';
 
 const router = Router();
 router.use(authenticate);
@@ -298,5 +299,161 @@ router.put(
     }
   }
 );
+
+// ---------- job-board logins ----------
+//
+// Clients store the logins we apply with (email, LinkedIn, Indeed, NHS Jobs).
+// Passwords are ENCRYPTED, never hashed — we have to sign in as the client — and
+// are never included in any listing. Reading one back is a separate, audited call.
+
+const SERVICES = ['email', 'linkedin', 'indeed', 'nhs_jobs'];
+
+const credentialsSchema = z.object({
+  credentials: z.array(
+    z.object({
+      service: z.enum(SERVICES),
+      username: z.string().max(254).optional().or(z.literal('')),
+      password: z.string().max(400).optional().or(z.literal('')),
+      remove: z.boolean().optional(),
+    })
+  ).max(SERVICES.length),
+});
+
+/** Masked view — what exists, never the secret itself. */
+function maskCredential(c) {
+  return { service: c.service, username: c.username, hasPassword: true, updatedAt: c.updatedAt };
+}
+
+async function listCredentials(clientId) {
+  const rows = await prisma.clientCredential.findMany({
+    where: { clientId },
+    orderBy: { service: 'asc' },
+  });
+  return rows.map(maskCredential);
+}
+
+/**
+ * Save/update/remove logins. Deliberately forgiving: this section is optional, so
+ * an incomplete entry is skipped and reported rather than failing the whole save.
+ * An empty password on an existing entry keeps the stored one (lets the UI submit
+ * its masked state without wiping the secret).
+ */
+async function saveCredentials(clientId, body, userId) {
+  const parsed = credentialsSchema.safeParse(body);
+  if (!parsed.success) return { error: 'Invalid credentials payload' };
+  if (!parsed.data.credentials.length) return { skipped: [] };
+  if (!credentialsEnabled()) {
+    return { error: 'Credential storage is not configured on the server (CREDENTIALS_ENC_KEY)' };
+  }
+
+  const skipped = [];
+  for (const entry of parsed.data.credentials) {
+    const existing = await prisma.clientCredential.findUnique({
+      where: { clientId_service: { clientId, service: entry.service } },
+    });
+
+    if (entry.remove) {
+      if (existing) await prisma.clientCredential.delete({ where: { id: existing.id } });
+      continue;
+    }
+
+    const username = (entry.username || '').trim();
+    const password = entry.password || '';
+    if (!username && !password) continue; // left blank — nothing to do
+
+    if (existing) {
+      await prisma.clientCredential.update({
+        where: { id: existing.id },
+        data: {
+          ...(username ? { username } : {}),
+          ...(password ? { secretEnc: encryptSecret(password) } : {}),
+          updatedById: userId,
+        },
+      });
+    } else if (username && password) {
+      await prisma.clientCredential.create({
+        data: { clientId, service: entry.service, username, secretEnc: encryptSecret(password), updatedById: userId },
+      });
+    } else {
+      // Half-filled and nothing stored yet — report it, but never block the save.
+      skipped.push(entry.service);
+    }
+  }
+  return { skipped };
+}
+
+/** The signed-in client's own logins. */
+router.get('/me/credentials', authorizeRole(['client']), async (req, res, next) => {
+  try {
+    const profile = await prisma.clientProfile.findUnique({ where: { userId: req.user.id }, select: { id: true } });
+    if (!profile) return res.status(404).json({ error: 'Client profile not found' });
+    res.json({ credentials: await listCredentials(profile.id), services: SERVICES });
+  } catch (err) { next(err); }
+});
+
+router.put('/me/credentials', authorizeRole(['client']), async (req, res, next) => {
+  try {
+    const profile = await prisma.clientProfile.findUnique({ where: { userId: req.user.id }, select: { id: true } });
+    if (!profile) return res.status(404).json({ error: 'Client profile not found' });
+    const result = await saveCredentials(profile.id, req.body, req.user.id);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ credentials: await listCredentials(profile.id), skipped: result.skipped });
+  } catch (err) { next(err); }
+});
+
+/** Team view of a client's logins — masked. Scope: admin all, employee assigned only. */
+router.get('/:id/credentials', loadClientScope, async (req, res, next) => {
+  try {
+    res.json({ credentials: await listCredentials(req.clientProfile.id), services: SERVICES });
+  } catch (err) { next(err); }
+});
+
+/** Admin/employee can also enter them on a client's behalf (e.g. sent by email). */
+router.put('/:id/credentials', authorizeRole(['admin', 'employee']), loadClientScope, async (req, res, next) => {
+  try {
+    const result = await saveCredentials(req.clientProfile.id, req.body, req.user.id);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ credentials: await listCredentials(req.clientProfile.id), skipped: result.skipped });
+  } catch (err) { next(err); }
+});
+
+/**
+ * Reveal one password so the team can apply as the client. Admin and the client's
+ * assigned employee only (loadClientScope enforces the assignment), and every
+ * reveal is written to the access log first so it is always attributable.
+ */
+router.post('/:id/credentials/:service/reveal', authorizeRole(['admin', 'employee']), loadClientScope, async (req, res, next) => {
+  try {
+    const { service } = req.params;
+    if (!SERVICES.includes(service)) return res.status(400).json({ error: 'Unknown service' });
+    const row = await prisma.clientCredential.findUnique({
+      where: { clientId_service: { clientId: req.clientProfile.id, service } },
+    });
+    if (!row) return res.status(404).json({ error: 'No login stored for this service' });
+
+    await prisma.credentialAccessLog.create({
+      data: { clientId: req.clientProfile.id, service, userId: req.user.id },
+    });
+    res.json({ service, username: row.username, password: decryptSecret(row.secretEnc) });
+  } catch (err) { next(err); }
+});
+
+/** Who has revealed this client's logins (admin only). */
+router.get('/:id/credentials/log', authorizeRole(['admin']), loadClientScope, async (req, res, next) => {
+  try {
+    const entries = await prisma.credentialAccessLog.findMany({
+      where: { clientId: req.clientProfile.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: { user: { select: { fullName: true, role: true } } },
+    });
+    res.json({
+      entries: entries.map((e) => ({
+        id: e.id, service: e.service, at: e.createdAt,
+        by: e.user.fullName, role: e.user.role,
+      })),
+    });
+  } catch (err) { next(err); }
+});
 
 export default router;
