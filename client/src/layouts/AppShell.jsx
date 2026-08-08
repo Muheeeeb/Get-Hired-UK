@@ -55,7 +55,7 @@ function LogoChip({ size = 40 }) {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-3 px-5 py-6">
+    <div className="flex shrink-0 items-center gap-3 px-5 py-6">
       <LogoChip size={40} />
       <div>
         <div className="font-display text-ivory text-base leading-tight">Get Hired Global</div>
@@ -107,8 +107,13 @@ export function AppShell({ children, alertMode = false }) {
   const sidebar = (
     <div className="flex h-full flex-col bg-navy-900">
       <Brand />
-      <div className="mx-5 h-px bg-gold-500/20" />
-      <nav className="flex-1 px-3 py-4 space-y-1" aria-label="Main navigation">
+      <div className="mx-5 h-px shrink-0 bg-gold-500/20" />
+      {/* min-h-0 lets this shrink below its content inside the flex column, so a
+          long menu (the admin one) scrolls instead of being clipped. */}
+      <nav
+        className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin]"
+        aria-label="Main navigation"
+      >
         {items.map((item) => (
           <NavLink
             key={item.to}
@@ -133,7 +138,7 @@ export function AppShell({ children, alertMode = false }) {
           </NavLink>
         ))}
       </nav>
-      <div className="px-5 py-5 border-t border-white/10">
+      <div className="shrink-0 border-t border-white/10 px-5 py-5">
         <div className="text-sm text-ivory font-medium truncate">{user?.fullName}</div>
         <div className="text-xs text-ivory/50 capitalize">{user?.role}</div>
         <div className="mt-3 grid grid-cols-2 gap-2">
