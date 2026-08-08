@@ -1010,12 +1010,22 @@
   @media(max-width:900px){ .hc-grid{ grid-template-columns:1fr; } }
   /* ---------- SLIDERS ---------- */
   .gh-slider{ position:relative; padding-left:52px; padding-right:52px; }
-  @media(max-width:600px){ .gh-slider{ padding-left:44px; padding-right:44px; } .gh-slider-pkg{ padding-left:12px; padding-right:12px; } }
+  /* On mobile every slider reserves a side gutter wide enough for its arrow, so
+     the arrows sit beside the card instead of on top of its text. */
+  @media(max-width:600px){
+    .gh-slider{ padding-left:44px; padding-right:44px; }
+    /* The packages carousel bleeds out of the .wrap 40px padding so the gutter
+       costs the card no width — the section heading stays inset as before. */
+    .gh-slider-pkg{ margin-left:-32px; margin-right:-32px; padding-left:46px; padding-right:46px; }
+  }
   .gh-track{ display:flex !important; gap:22px; overflow-x:auto; scroll-snap-type:x mandatory; grid-template-columns:none !important; padding:6px 2px 16px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
   .gh-track::-webkit-scrollbar{ display:none; }
   .gh-track > *{ flex:0 0 auto; scroll-snap-align:start; opacity:1 !important; transform:none !important; }
   .how-grid.gh-track > .how-card{ width:min(260px,78vw); }
   .pkg-grid.gh-track > .pkg-card{ width:min(300px,80vw); scroll-snap-align:center; }
+  /* One package per view on mobile: the card fills the track, so it always stops
+     short of the arrow gutters either side. */
+  @media(max-width:600px){ .pkg-grid.gh-track > .pkg-card{ width:100%; } }
   .timeline.gh-track > .timeline-item{ width:min(320px,84vw); background:var(--white); border:1px solid var(--line); border-radius:14px; padding:24px; padding-bottom:24px; }
   .timeline.gh-track > .timeline-item::after{ display:none !important; }
   .included-grid-v2{ grid-template-columns:1fr; gap:34px; }
@@ -1026,7 +1036,7 @@
   .gh-slider-pkg .gh-arrow:hover{ background:var(--gold-light); }
   .gh-prev{ left:6px; } .gh-next{ right:6px; }
   .gh-arrow[disabled]{ opacity:0.55; cursor:default; }
-  @media(max-width:600px){ .gh-arrow{ top:150px; width:48px; height:48px; font-size:1.6rem; } .gh-prev{ left:4px; } .gh-next{ right:4px; } }
+  @media(max-width:600px){ .gh-arrow{ top:150px; width:40px; height:40px; font-size:1.5rem; } .gh-prev{ left:3px; } .gh-next{ right:3px; } }
   /* contact details */
   .contact-details{ display:flex; flex-direction:column; gap:12px; margin-top:26px; }
   .contact-details a{ display:inline-flex; align-items:center; gap:10px; color:var(--white); font-size:0.98rem; }
@@ -1834,8 +1844,9 @@
       prev.addEventListener('click', function(){ track.scrollBy({left:-step(), behavior:'smooth'}); });
       next.addEventListener('click', function(){ track.scrollBy({left:step(), behavior:'smooth'}); });
       track.addEventListener('scroll', upd); window.addEventListener('resize', upd); setTimeout(upd, 60);
-      var featC=track.querySelector('.featured');
-      if(featC){ setTimeout(function(){ track.scrollLeft = Math.max(0, featC.offsetLeft + featC.offsetWidth/2 - track.clientWidth/2); upd(); }, 90); }
+      // Start on the first card and read in order — packages open on Silver, not
+      // on the featured "Most popular" one.
+      track.scrollLeft = 0;
       // grab-and-drag with the mouse (touch already scrolls natively)
       var down=false, dsx=0, dsl=0, dm=false;
       track.style.cursor='grab';
