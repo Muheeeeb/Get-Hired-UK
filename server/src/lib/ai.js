@@ -9,23 +9,32 @@ import { env } from '../config/env.js';
  * General document generator for the employee AI Studio.
  * kind: 'cv' | 'cover_letter' | 'freeform'
  */
-export async function generateDocument({ kind, prompt, clientName, domainName, masterText, referenceText }) {
-  const system =
+export async function generateDocument({
+  kind, prompt, clientName, domainName, masterText, referenceText, history = [],
+}) {
+  const base =
     kind === 'cv'
       ? 'You are an expert UK CV writer. Produce a complete, well-structured CV in plain text (UK English): profile, key achievements, experience, education, skills. Quantify achievements. No placeholders — use the provided material.'
       : kind === 'cover_letter'
         ? 'You are an expert UK recruitment copywriter. Write a concise, professional cover letter (250-350 words, UK English). Return only the letter body.'
         : 'You are an expert UK careers assistant helping a recruitment specialist draft documents. Follow the instructions precisely. UK English.';
+  // The studio is a conversation: the specialist iterates on the draft, so also
+  // answer questions and explain choices rather than only emitting documents.
+  const system = `${base}\n\nYou are in an ongoing chat with a recruitment specialist. Keep the full conversation in mind and apply their revisions to the previous draft. When they ask a question rather than request a document, answer it directly and concisely.`;
 
-  const userContent = [
-    clientName ? `Candidate: ${clientName}` : '',
-    domainName ? `Career domain: ${domainName}` : '',
-    prompt ? `Instructions:\n${prompt}` : '',
-    masterText ? `Master document content:\n${masterText.slice(0, 6000)}` : '',
-    referenceText ? `Reference material:\n${referenceText.slice(0, 6000)}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  const isFollowUp = history.length > 0;
+  // Context (candidate, master CV) is established on the first turn — later turns
+  // only carry the new instruction, so follow-ups stay fast and cheap.
+  const userContent = (isFollowUp
+    ? [prompt, referenceText ? `Reference material:\n${referenceText.slice(0, 6000)}` : '']
+    : [
+        clientName ? `Candidate: ${clientName}` : '',
+        domainName ? `Career domain: ${domainName}` : '',
+        prompt ? `Instructions:\n${prompt}` : '',
+        masterText ? `Master document content:\n${masterText.slice(0, 6000)}` : '',
+        referenceText ? `Reference material:\n${referenceText.slice(0, 6000)}` : '',
+      ]
+  ).filter(Boolean).join('\n\n');
 
   if (env.aiApiKey) {
     const { default: OpenAI } = await import('openai');
@@ -36,6 +45,7 @@ export async function generateDocument({ kind, prompt, clientName, domainName, m
       max_tokens: 1500,
       messages: [
         { role: 'system', content: system },
+        ...history.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: userContent },
       ],
     });

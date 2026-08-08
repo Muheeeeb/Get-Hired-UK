@@ -55,7 +55,7 @@ function LogoChip({ size = 40 }) {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-3 px-5 py-6">
+    <div className="flex shrink-0 items-center gap-3 px-5 py-6">
       <LogoChip size={40} />
       <div>
         <div className="font-display text-ivory text-base leading-tight">Get Hired Global</div>
@@ -107,8 +107,13 @@ export function AppShell({ children, alertMode = false }) {
   const sidebar = (
     <div className="flex h-full flex-col bg-navy-900">
       <Brand />
-      <div className="mx-5 h-px bg-gold-500/20" />
-      <nav className="flex-1 px-3 py-4 space-y-1" aria-label="Main navigation">
+      <div className="mx-5 h-px shrink-0 bg-gold-500/20" />
+      {/* min-h-0 lets this shrink below its content inside the flex column, so a
+          long menu (the admin one) scrolls instead of being clipped. */}
+      <nav
+        className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4 [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin]"
+        aria-label="Main navigation"
+      >
         {items.map((item) => (
           <NavLink
             key={item.to}
@@ -133,7 +138,7 @@ export function AppShell({ children, alertMode = false }) {
           </NavLink>
         ))}
       </nav>
-      <div className="px-5 py-5 border-t border-white/10">
+      <div className="shrink-0 border-t border-white/10 px-5 py-5">
         <div className="text-sm text-ivory font-medium truncate">{user?.fullName}</div>
         <div className="text-xs text-ivory/50 capitalize">{user?.role}</div>
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -292,10 +297,19 @@ function ChangePasswordModal({ open, onClose, user, requiredProfile, onProfileCo
   );
 }
 
+const JOB_LOGINS = [
+  { service: 'email', label: 'Email account' },
+  { service: 'linkedin', label: 'LinkedIn' },
+  { service: 'indeed', label: 'Indeed' },
+  { service: 'nhs_jobs', label: 'NHS Jobs' },
+];
+
 function ClientProfile({ requiredProfile, onComplete }) {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [creds, setCreds] = useState({});
+  const [credNote, setCredNote] = useState(null);
   useEffect(() => {
     api.get('/clients/me/profile').then((r) => {
       const p = r.data.profile;
@@ -309,12 +323,43 @@ function ClientProfile({ requiredProfile, onComplete }) {
         notes: p.notes ?? '',
       });
     }).catch((err) => setError(errorMessage(err)));
+    // Logins are optional, so a failure here must never block the profile form.
+    api.get('/clients/me/credentials').then((r) => {
+      const map = {};
+      (r.data.credentials || []).forEach((c) => { map[c.service] = { username: c.username, password: '', hasPassword: c.hasPassword }; });
+      setCreds(map);
+    }).catch(() => {});
   }, []);
   if (!form) return <div className="mb-5 text-sm text-ink-soft">Loading your profile…</div>;
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const setCred = (service, key, value) =>
+    setCreds((c) => ({ ...c, [service]: { ...(c[service] || {}), [key]: value } }));
+
   async function save(e) {
-    e.preventDefault(); setBusy(true); setError(null);
-    try { await api.put('/clients/me/profile', form); onComplete(); }
+    e.preventDefault(); setBusy(true); setError(null); setCredNote(null);
+    try {
+      await api.put('/clients/me/profile', form);
+      // Saved separately and after, so a problem with the optional logins can
+      // never stop the mandatory details being saved.
+      const payload = JOB_LOGINS
+        .map(({ service }) => ({ service, username: creds[service]?.username || '', password: creds[service]?.password || '' }))
+        .filter((c) => c.username || c.password);
+      if (payload.length) {
+        try {
+          const { data } = await api.put('/clients/me/credentials', { credentials: payload });
+          const map = {};
+          (data.credentials || []).forEach((c) => { map[c.service] = { username: c.username, password: '', hasPassword: c.hasPassword }; });
+          setCreds(map);
+          if (data.skipped?.length) {
+            const names = data.skipped.map((s) => JOB_LOGINS.find((j) => j.service === s)?.label || s);
+            setCredNote(`Saved. ${names.join(' and ')} also needs a password to be stored.`);
+          }
+        } catch (err) {
+          setCredNote(`Your details were saved, but the logins could not be: ${errorMessage(err)}`);
+        }
+      }
+      onComplete();
+    }
     catch (err) { setError(errorMessage(err)); }
     finally { setBusy(false); }
   }
@@ -330,6 +375,34 @@ function ClientProfile({ requiredProfile, onComplete }) {
     </div>
     <label className="block"><span className="label-caps text-navy-800/70 block mb-1.5">Residential address</span><textarea required rows={2} maxLength={2000} className="w-full rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm" value={form.residentialAddress || ''} onChange={(e) => set('residentialAddress', e.target.value)} /></label>
     <label className="block"><span className="label-caps text-navy-800/70 block mb-1.5">Additional notes (optional)</span><textarea rows={2} maxLength={2000} className="w-full rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm" value={form.notes || ''} onChange={(e) => set('notes', e.target.value)} /></label>
+
+    <div className="rounded-xl border border-navy-800/10 bg-white/70 p-3">
+      <p className="text-sm font-semibold text-navy-800">Job board logins (optional)</p>
+      <p className="mt-0.5 text-xs text-ink-soft">
+        Add these and our specialists can apply for roles directly from your own accounts.
+        Passwords are stored encrypted and only your assigned specialist and an admin can see them.
+        You can leave any of these blank.
+      </p>
+      <div className="mt-3 space-y-3">
+        {JOB_LOGINS.map(({ service, label }) => (
+          <div key={service} className="grid gap-2 sm:grid-cols-2">
+            <Input
+              id={`cred-${service}-user`} label={`${label} — login email`} type="email" maxLength={254}
+              value={creds[service]?.username || ''}
+              onChange={(e) => setCred(service, 'username', e.target.value)}
+            />
+            <PasswordInput
+              id={`cred-${service}-pass`} label={`${label} — password`} maxLength={400}
+              autoComplete="new-password"
+              placeholder={creds[service]?.hasPassword ? '•••••••• saved — type to replace' : ''}
+              value={creds[service]?.password || ''}
+              onChange={(e) => setCred(service, 'password', e.target.value)}
+            />
+          </div>
+        ))}
+      </div>
+      {credNote && <p className="mt-2 text-xs font-medium text-gold-600">{credNote}</p>}
+    </div>
     {error && <p className="text-sm text-danger">{error}</p>}
     <Button type="submit" disabled={busy} className="w-full">{busy ? 'Saving…' : 'Save profile details'}</Button>
   </form>;

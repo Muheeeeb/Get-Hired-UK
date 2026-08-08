@@ -14,6 +14,14 @@ enum Role {
   social
 }
 
+/// Third-party job-board accounts the team applies from on a client's behalf.
+enum CredentialService {
+  email
+  linkedin
+  indeed
+  nhs_jobs
+}
+
 enum PostType {
   blog
   story
@@ -69,6 +77,7 @@ model User {
   tailoredUploads    TailoredDocument[]  @relation("TailoredUploader")
   interviewResources InterviewResource[] @relation("ResourceCreator")
   posts              Post[]              @relation("PostAuthor")
+  credentialAccesses CredentialAccessLog[] @relation("CredentialRevealer")
   refreshTokens      RefreshToken[]
   passwordResets     PasswordResetToken[]
   emailVerifications EmailVerificationToken[]
@@ -217,8 +226,43 @@ model ClientProfile {
   dailyPulseLogs     DailyPulseLog[]
   interviewSessions  InterviewSession[]
   interviewResources InterviewResource[]
+  credentials        ClientCredential[]
 
   @@map("client_profiles")
+}
+
+/// A client's login for one job board, so the team can apply as them.
+/// The password is stored ENCRYPTED (AES-256-GCM, see lib/secrets.js) rather than
+/// hashed, because it has to be recoverable to actually sign in. The key lives in
+/// the environment, never here — a stolen dump alone reveals nothing.
+model ClientCredential {
+  id          String            @id @default(uuid()) @db.Uuid
+  clientId    String            @map("client_id") @db.Uuid
+  service     CredentialService
+  username    String // the login email for that service
+  secretEnc   String            @map("secret_enc")
+  updatedById String?           @map("updated_by") @db.Uuid
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  client ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, service])
+  @@map("client_credentials")
+}
+
+/// Every time a password is revealed, so misuse of a client's account is traceable.
+model CredentialAccessLog {
+  id        String            @id @default(uuid()) @db.Uuid
+  clientId  String            @map("client_id") @db.Uuid
+  service   CredentialService
+  userId    String            @map("user_id") @db.Uuid
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  user User @relation("CredentialRevealer", fields: [userId], references: [id])
+
+  @@index([clientId, createdAt])
+  @@map("credential_access_log")
 }
 
 model Domain {

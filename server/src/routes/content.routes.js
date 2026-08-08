@@ -90,21 +90,62 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// What we're willing to store once the HTML has been cleaned. The raw cap is far
+// looser: pasting from Word or Google Docs carries a lot of markup (and inline
+// base64 images) that sanitising strips away, so the raw paste must not be
+// rejected before we've had a chance to clean it down to size.
+const MAX_BODY = 400_000;
+const MAX_RAW_BODY = 8_000_000;
+
 const bodySchema = z.object({
   type: z.enum(['blog', 'story', 'insight']),
   title: z.string().min(2).max(200),
   category: z.string().max(80).optional().or(z.literal('')),
   summary: z.string().max(500).optional().or(z.literal('')),
-  body: z.string().max(100000).optional().or(z.literal('')),
+  body: z.string().max(MAX_RAW_BODY).optional().or(z.literal('')),
   status: z.enum(['draft', 'published']).optional(),
 });
+
+const FIELD_NAMES = {
+  type: 'Type', title: 'Title', category: 'Category',
+  summary: 'Summary', body: 'Main text', status: 'Status',
+};
+
+/**
+ * Say what actually failed. This used to answer every validation error with
+ * "Title and type are required", which sent people hunting for a problem in
+ * fields that were filled in correctly.
+ */
+function describeIssue(issues) {
+  const i = issues[0];
+  if (!i) return 'Please check the form and try again.';
+  const name = FIELD_NAMES[i.path?.[0]] || i.path?.[0] || 'Field';
+  switch (i.code) {
+    case 'too_big':
+      return `${name} is too long — maximum ${Number(i.maximum).toLocaleString('en-GB')} characters.`;
+    case 'too_small':
+      return `${name} must be at least ${i.minimum} character${i.minimum === 1 ? '' : 's'}.`;
+    case 'invalid_type':
+    case 'invalid_enum_value':
+    case 'invalid_union':
+      return `${name} is required.`;
+    default:
+      return `${name}: ${i.message}`;
+  }
+}
 
 // ---------- create ----------
 router.post('/', upload.single('cover'), async (req, res, next) => {
   try {
     const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Title and type are required', details: parsed.error.issues });
+    if (!parsed.success) return res.status(400).json({ error: describeIssue(parsed.error.issues), details: parsed.error.issues });
     const d = parsed.data;
+
+    // Clean first, then size-check: what matters is the length of what we store.
+    const cleanedBody = cleanBody(d.body);
+    if (cleanedBody.length > MAX_BODY) {
+      return res.status(400).json({ error: `Main text is too long — maximum ${MAX_BODY.toLocaleString('en-GB')} characters.` });
+    }
 
     let coverImageKey = null;
     if (req.file) {
@@ -120,7 +161,7 @@ router.post('/', upload.single('cover'), async (req, res, next) => {
         slug: await uniqueSlug(slugify(d.title)),
         category: d.category || null,
         summary: d.summary || null,
-        body: cleanBody(d.body),
+        body: cleanedBody,
         coverImageKey,
         status,
         publishedAt: status === 'published' ? new Date() : null,
@@ -136,7 +177,7 @@ router.post('/', upload.single('cover'), async (req, res, next) => {
 router.put('/:id', upload.single('cover'), async (req, res, next) => {
   try {
     const parsed = bodySchema.partial().safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid fields', details: parsed.error.issues });
+    if (!parsed.success) return res.status(400).json({ error: describeIssue(parsed.error.issues), details: parsed.error.issues });
     const d = parsed.data;
 
     const current = await prisma.post.findUnique({ where: { id: req.params.id } });
@@ -147,7 +188,13 @@ router.put('/:id', upload.single('cover'), async (req, res, next) => {
     if (d.title !== undefined) { data.title = d.title; data.slug = await uniqueSlug(slugify(d.title), current.id); }
     if (d.category !== undefined) data.category = d.category || null;
     if (d.summary !== undefined) data.summary = d.summary || null;
-    if (d.body !== undefined) data.body = cleanBody(d.body);
+    if (d.body !== undefined) {
+      const cleaned = cleanBody(d.body);
+      if (cleaned.length > MAX_BODY) {
+        return res.status(400).json({ error: `Main text is too long — maximum ${MAX_BODY.toLocaleString('en-GB')} characters.` });
+      }
+      data.body = cleaned;
+    }
     if (d.status && d.status !== current.status) {
       data.status = d.status;
       // Stamp publishedAt the first time it goes live; keep it stable afterwards.

@@ -171,6 +171,10 @@ export default function SocialStudio() {
           <div>
             <span className="label-caps text-navy-800/70 block mb-1.5">Main text</span>
             <RichTextEditor value={form.body} onChange={(html) => setForm((f) => ({ ...f, body: html }))} />
+            <p className="mt-1.5 text-xs text-ink-soft">
+              You can paste from Word or Google Docs — formatting is tidied up automatically.
+              Pasted images aren't kept; use the cover image above.
+            </p>
           </div>
           {formError && <p className="text-sm text-danger">{formError}</p>}
           <div className="flex justify-end gap-2">

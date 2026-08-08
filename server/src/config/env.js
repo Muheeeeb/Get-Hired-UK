@@ -32,6 +32,10 @@ export const env = {
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS || 7),
 
   storageDriver: process.env.STORAGE_DRIVER || 'local',
+  // Encrypts clients' third-party job-board logins at rest. Not `required()` —
+  // without it the credentials feature simply stays off rather than the whole
+  // API refusing to boot. Generate with: openssl rand -base64 32
+  credentialsEncKey: process.env.CREDENTIALS_ENC_KEY || '',
   fileUrlSecret: required('FILE_URL_SECRET'),
   signedUrlTtlSeconds: Number(process.env.SIGNED_URL_TTL_SECONDS || 300),
   aws: {
