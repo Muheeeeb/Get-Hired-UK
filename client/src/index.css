@@ -91,6 +91,55 @@ body {
   text-transform: uppercase;
 }
 
+/* Admin tables restack into one card per row on a phone. A six-column table is
+   ~700px wide, so on a 390px screen it forced sideways panning to read anything.
+   Each cell carries its column name in data-label, which becomes the row label. */
+@media (max-width: 640px) {
+  .stack-table thead {
+    display: none;
+  }
+  .stack-table,
+  .stack-table tbody,
+  .stack-table tr,
+  .stack-table td {
+    display: block;
+    width: 100%;
+  }
+  .stack-table tr {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--color-ivory-dark);
+  }
+  .stack-table tr:last-child {
+    border-bottom: 0;
+  }
+  .stack-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.3rem 1.25rem !important;
+    text-align: right;
+  }
+  .stack-table td::before {
+    content: attr(data-label);
+    flex: none;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+  }
+  /* Cells with no label (the actions column) get the full width. */
+  .stack-table td:not([data-label])::before {
+    content: none;
+  }
+  .stack-table td:not([data-label]) {
+    justify-content: flex-end;
+    padding-top: 0.6rem !important;
+  }
+}
+
 /* Focus visibility for keyboard navigation */
 :focus-visible {
   outline: 2px solid var(--color-gold-500);

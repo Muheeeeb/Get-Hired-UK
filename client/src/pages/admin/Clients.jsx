@@ -84,7 +84,7 @@ export default function AdminClients() {
             <EmptyState icon="👤" title="No clients yet" hint="Create your first client to get started." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="stack-table w-full text-sm">
                 <thead>
                   <tr className="text-left border-b border-gold-500/20">
                     <th className="label-caps text-ink-soft px-6 py-3">Client</th>
@@ -98,16 +98,16 @@ export default function AdminClients() {
                   {visibleClients.map((c) => (
                     <tr key={c.id} onClick={() => navigate(`/admin/clients/${c.id}`)}
                       className="cursor-pointer border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
-                      <td className="px-6 py-3.5">
+                      <td data-label="Client" className="px-6 py-3.5">
                         <span className="font-semibold text-navy-800">{c.user.fullName}</span>
                         <div className="text-xs text-ink-soft">{c.user.email}</div>
                       </td>
-                      <td className="px-4 py-3.5 text-ink-soft">{c.packageType}</td>
-                      <td className="px-4 py-3.5">
+                      <td data-label="Package" className="px-4 py-3.5 text-ink-soft">{c.packageType}</td>
+                      <td data-label="Assigned to" className="px-4 py-3.5">
                         {c.assignedEmployee ? c.assignedEmployee.fullName : <Badge tone="alert">Unassigned</Badge>}
                       </td>
-                      <td className="px-4 py-3.5">{c._count.jobApplications}</td>
-                      <td className="px-4 py-3.5">
+                      <td data-label="Jobs" className="px-4 py-3.5">{c._count.jobApplications}</td>
+                      <td data-label="Expiry" className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
                           <span className="text-ink-soft whitespace-nowrap">{formatDate(c.expiryDate)}</span>
                           {c.daysRemaining <= 7 && c.daysRemaining >= 0 && (

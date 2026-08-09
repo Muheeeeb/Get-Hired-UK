@@ -70,7 +70,7 @@ export default function AdminEmployees() {
             <EmptyState icon="🧑‍💼" title="No employees yet" hint="Create your first team member." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="stack-table w-full text-sm">
                 <thead>
                   <tr className="text-left border-b border-gold-500/20">
                     <th className="label-caps text-ink-soft px-6 py-3">Name</th>
@@ -85,11 +85,11 @@ export default function AdminEmployees() {
                   {employees.map((emp) => (
                     <tr key={emp.id} onClick={() => navigate(`/admin/employees/${emp.id}`)}
                       className="cursor-pointer border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
-                      <td className="px-6 py-3.5 font-semibold text-navy-800">{emp.fullName}</td>
-                      <td className="px-4 py-3.5 text-ink-soft">{emp.email}</td>
-                      <td className="px-4 py-3.5">{emp._count.assignedClients}</td>
-                      <td className="px-4 py-3.5 text-ink-soft">{emp.lastLoginAt ? formatDate(emp.lastLoginAt) : 'Never'}</td>
-                      <td className="px-4 py-3.5">
+                      <td data-label="Name" className="px-6 py-3.5 font-semibold text-navy-800">{emp.fullName}</td>
+                      <td data-label="Email" className="break-all px-4 py-3.5 text-ink-soft">{emp.email}</td>
+                      <td data-label="Clients" className="px-4 py-3.5">{emp._count.assignedClients}</td>
+                      <td data-label="Last login" className="px-4 py-3.5 text-ink-soft">{emp.lastLoginAt ? formatDate(emp.lastLoginAt) : 'Never'}</td>
+                      <td data-label="Status" className="px-4 py-3.5">
                         <Badge tone={emp.isActive ? 'success' : 'danger'}>
                           {emp.isActive ? '● Active' : '○ Deactivated'}
                         </Badge>

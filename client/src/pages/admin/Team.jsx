@@ -108,7 +108,7 @@ export default function Team() {
         <Card className="animate-rise">
           <CardHeader title="Administrators" />
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="stack-table w-full text-sm">
               <thead>
                 <tr className="border-b border-gold-500/20 text-left">
                   <th className="label-caps px-6 py-3 text-ink-soft">Name</th>
@@ -122,12 +122,12 @@ export default function Team() {
               <tbody>
                 {admins.map((a) => (
                   <tr key={a.id} className="border-b border-ivory-dark last:border-0">
-                    <td className="px-6 py-3.5">
+                    <td data-label="Name" className="px-6 py-3.5">
                       <span className="font-semibold text-navy-800">{a.fullName}</span>
                       {a.isLead && <Badge tone="gold">Lead</Badge>}
                       {a.designation && <div className="text-xs text-ink-soft">{a.designation}</div>}
                     </td>
-                    <td className="px-4 py-3.5 text-ink-soft">{a.email}</td>
+                    <td data-label="Email" className="break-all px-4 py-3.5 text-ink-soft">{a.email}</td>
                     <td className="px-4 py-3.5">
                       <div className="flex flex-wrap gap-1.5">
                         <Badge tone={a.activity?.online ? 'success' : 'navy'}>
@@ -136,8 +136,8 @@ export default function Team() {
                         {!a.isActive && <Badge tone="danger">Deactivated</Badge>}
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 tabular-nums">{hours(a.activity?.todayMs)}</td>
-                    <td className="px-4 py-3.5 tabular-nums">{hours(a.activity?.weekMs)}</td>
+                    <td data-label="Today" className="px-4 py-3.5 tabular-nums">{hours(a.activity?.todayMs)}</td>
+                    <td data-label="7 days" className="px-4 py-3.5 tabular-nums">{hours(a.activity?.weekMs)}</td>
                     <td className="px-4 py-3.5">
                       {!a.isLead && (
                         <div className="flex justify-end gap-1.5">
@@ -167,7 +167,7 @@ export default function Team() {
         <Card className="mt-6 animate-rise animate-rise-1">
           <CardHeader title="Team Activity" subtitle="Login status and working time — everyone" />
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="stack-table w-full text-sm">
               <thead>
                 <tr className="border-b border-gold-500/20 text-left">
                   <th className="label-caps px-6 py-3 text-ink-soft">Name</th>
@@ -181,11 +181,11 @@ export default function Team() {
               <tbody>
                 {team.map((t) => (
                   <tr key={t.id} className="border-b border-ivory-dark last:border-0">
-                    <td className="px-6 py-3.5 font-semibold text-navy-800">
+                    <td data-label="Name" className="px-6 py-3.5 font-semibold text-navy-800">
                       {t.fullName}
                       {t.designation && <div className="text-xs font-normal text-ink-soft">{t.designation}</div>}
                     </td>
-                    <td className="px-4 py-3.5 capitalize text-ink-soft">{t.isLead ? 'admin lead' : t.role}</td>
+                    <td data-label="Role" className="px-4 py-3.5 capitalize text-ink-soft">{t.isLead ? 'admin lead' : t.role}</td>
                     <td className="px-4 py-3.5">
                       <Badge tone={t.activity?.online ? 'success' : 'navy'}>
                         {t.activity?.online ? '● Online' : '○ Offline'}

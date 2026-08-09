@@ -69,7 +69,7 @@ export default function AdminSocialTeam() {
             <EmptyState icon="✍️" title="No social accounts yet" hint="Create an account for a social-media team member." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="stack-table w-full text-sm">
                 <thead>
                   <tr className="text-left border-b border-gold-500/20">
                     <th className="label-caps text-ink-soft px-6 py-3">Name</th>
@@ -83,11 +83,11 @@ export default function AdminSocialTeam() {
                 <tbody>
                   {users.map((u) => (
                     <tr key={u.id} className="border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
-                      <td className="px-6 py-3.5 font-semibold text-navy-800">{u.fullName}</td>
-                      <td className="px-4 py-3.5 text-ink-soft">{u.email}</td>
-                      <td className="px-4 py-3.5">{u._count.posts}</td>
-                      <td className="px-4 py-3.5 text-ink-soft">{u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Never'}</td>
-                      <td className="px-4 py-3.5">
+                      <td data-label="Name" className="px-6 py-3.5 font-semibold text-navy-800">{u.fullName}</td>
+                      <td data-label="Email" className="break-all px-4 py-3.5 text-ink-soft">{u.email}</td>
+                      <td data-label="Posts" className="px-4 py-3.5">{u._count.posts}</td>
+                      <td data-label="Last login" className="px-4 py-3.5 text-ink-soft">{u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Never'}</td>
+                      <td data-label="Status" className="px-4 py-3.5">
                         <Badge tone={u.isActive ? 'success' : 'danger'}>
                           {u.isActive ? '● Active' : '○ Deactivated'}
                         </Badge>
