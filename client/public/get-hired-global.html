@@ -813,12 +813,24 @@
   .mobile-menu{
     position:fixed; inset:0; z-index:48;
     background:var(--cream);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+    /* justify-content:center would push the first links above the top edge on a
+       short screen, out of reach. Start at the top and centre with the auto
+       margins below instead, which collapse harmlessly when it doesn't fit. */
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:6px;
     padding:90px 24px 40px;
+    /* The menu scrolls itself; overscroll-behavior stops that scroll chaining to
+       the page behind, which is what let the header slide out of view. */
+    overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
     opacity:0; visibility:hidden; transform:translateY(-10px);
     transition:opacity .32s ease, transform .32s ease, visibility .32s;
   }
+  .mobile-menu > :first-child{ margin-top:auto; }
+  .mobile-menu > :last-child{ margin-bottom:auto; }
   .mobile-menu.open{ opacity:1; visibility:visible; transform:translateY(0); }
+  /* While the menu is open the header must stay put. Sticky isn't enough: iOS
+     Safari doesn't reliably honour overflow:hidden on body, so the sticky header
+     scrolled away and took Login and the close button with it. */
+  body.menu-open .nav{ position:fixed; top:0; left:0; right:0; }
   .mobile-menu a.m-link{
     font-family:'Playfair Display', serif; font-size:1.55rem; color:var(--navy);
     text-decoration:none; padding:9px 6px; position:relative;
@@ -1594,12 +1606,15 @@
   // Hamburger / mobile menu
   const navToggle = document.getElementById('navToggle');
   const mobileMenu = document.getElementById('mobileMenu');
-  function closeMenu(){ mobileMenu.classList.remove('open'); navToggle.classList.remove('open'); navToggle.setAttribute('aria-expanded','false'); document.body.style.overflow=''; }
+  function closeMenu(){ mobileMenu.classList.remove('open'); navToggle.classList.remove('open'); navToggle.setAttribute('aria-expanded','false'); document.body.style.overflow=''; document.body.classList.remove('menu-open'); mobileMenu.scrollTop = 0; }
   navToggle.addEventListener('click', () => {
     const isOpen = mobileMenu.classList.toggle('open');
     navToggle.classList.toggle('open', isOpen);
     navToggle.setAttribute('aria-expanded', isOpen);
     document.body.style.overflow = isOpen ? 'hidden' : '';
+    // Pins the header so Login and the close button stay reachable while scrolling.
+    document.body.classList.toggle('menu-open', isOpen);
+    if (isOpen) mobileMenu.scrollTop = 0;
   });
   mobileMenu.querySelectorAll('a').forEach(a => a.addEventListener('click', closeMenu));
   document.addEventListener('keydown', e => { if(e.key==='Escape' && mobileMenu.classList.contains('open')) closeMenu(); });

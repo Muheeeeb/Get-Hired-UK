@@ -96,7 +96,7 @@ export default function EmployeeDetail() {
                 <EmptyState icon="🗂️" title="No clients assigned" />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="stack-table w-full text-sm">
                     <thead>
                       <tr className="border-b border-gold-500/20 text-left">
                         <th className="label-caps px-6 py-3 text-ink-soft">Client</th>
@@ -108,7 +108,7 @@ export default function EmployeeDetail() {
                     <tbody>
                       {data.clients.map((c) => (
                         <tr key={c.clientId} className="border-b border-ivory-dark last:border-0 hover:bg-ivory/60">
-                          <td className="px-6 py-3.5">
+                          <td data-label="Client" className="px-6 py-3.5">
                             <Link to={`/admin/clients/${c.clientId}`} className="font-semibold text-navy-800 hover:text-gold-600">
                               {c.fullName}
                             </Link>
@@ -116,8 +116,8 @@ export default function EmployeeDetail() {
                               <Badge tone="alert">⏳ {c.daysRemaining}d</Badge>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 text-ink-soft">{c.packageType}</td>
-                          <td className="px-4 py-3.5 tabular-nums">
+                          <td data-label="Package" className="px-4 py-3.5 text-ink-soft">{c.packageType}</td>
+                          <td data-label="This month" className="px-4 py-3.5 tabular-nums">
                             {c.monthApplied} / {c.monthlyJobTarget}
                             <span className="ml-1.5 text-xs text-ink-soft">({c.percent ?? 0}%)</span>
                           </td>
