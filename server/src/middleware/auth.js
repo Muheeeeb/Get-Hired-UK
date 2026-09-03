@@ -57,7 +57,7 @@ export function authorizeRole(roles) {
 export async function loadClientScope(req, res, next) {
   try {
     const clientProfileId = req.params.id || req.params.clientId;
-    const userSelect = { select: { id: true, fullName: true, email: true, isActive: true } };
+    const userSelect = { select: { id: true, fullName: true, email: true, phone: true, isActive: true } };
 
     // "me" alias: a client addresses their own profile without knowing its id.
     if (clientProfileId === 'me') {

@@ -1020,6 +1020,31 @@
   .hc-empty .css{ color:var(--text-muted); font-size:0.95rem; margin-top:8px; }
   .hc-more{ text-align:center; margin-top:36px; display:none; }
   @media(max-width:900px){ .hc-grid{ grid-template-columns:1fr; } }
+  /* Blog + success-story carousels: swipeable tracks with desktop arrows. */
+  .hc-slider{ position:relative; }
+  .hc-slider .hc-grid{
+    display:flex; gap:26px; overflow-x:auto; scroll-snap-type:x mandatory;
+    padding:8px 3px 20px; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  .hc-slider .hc-grid::-webkit-scrollbar{ display:none; }
+  .hc-slider .hc-card{ flex:0 0 calc((100% - 52px)/3); min-width:0; scroll-snap-align:start; }
+  .hc-arrow{
+    position:absolute; top:50%; z-index:5; display:none; width:44px; height:44px;
+    align-items:center; justify-content:center; border:0; border-radius:50%;
+    background:var(--navy); color:#fff; box-shadow:0 10px 24px -10px rgba(16,32,61,.55);
+    cursor:pointer; font-size:1.55rem; line-height:1; transform:translateY(-50%);
+    transition:background .2s,opacity .2s;
+  }
+  .hc-slider.has-overflow .hc-arrow{ display:flex; }
+  .hc-arrow:hover{ background:var(--gold); }
+  .hc-arrow:disabled{ opacity:.35; cursor:default; }
+  .hc-prev{ left:-22px; }
+  .hc-next{ right:-22px; }
+  @media(max-width:900px){
+    .hc-slider .hc-card{ flex-basis:min(82vw,420px); }
+    .hc-prev{ left:-8px; } .hc-next{ right:-8px; }
+    .hc-arrow{ width:40px; height:40px; }
+  }
   /* ---------- SLIDERS ---------- */
   .gh-slider{ position:relative; padding-left:52px; padding-right:52px; }
   /* On mobile every slider reserves a side gutter wide enough for its arrow, so
@@ -1498,7 +1523,11 @@
       <h2>Notes from the job hunt</h2>
       <p>Practical job-search advice from our specialists — fresh insights as we publish them.</p>
     </div>
-    <div class="hc-grid" id="homeBlogGrid"></div>
+    <div class="hc-slider" id="homeBlogSlider" aria-label="Blog posts carousel">
+      <button class="hc-arrow hc-prev" type="button" aria-label="Previous blog posts">‹</button>
+      <div class="hc-grid" id="homeBlogGrid"></div>
+      <button class="hc-arrow hc-next" type="button" aria-label="Next blog posts">›</button>
+    </div>
     <div class="hc-empty" id="homeBlogEmpty"><div class="cs">Coming soon</div><div class="css">Our first posts are on the way.</div></div>
     <div class="hc-more" id="homeBlogMore"><a class="btn-outline" href="blog.html">View all posts</a></div>
   </div>
@@ -1511,7 +1540,11 @@
       <h2>Where our clients landed</h2>
       <p>Real people, real offers — the roles our clients stepped into.</p>
     </div>
-    <div class="hc-grid" id="homeStoryGrid"></div>
+    <div class="hc-slider" id="homeStorySlider" aria-label="Success stories carousel">
+      <button class="hc-arrow hc-prev" type="button" aria-label="Previous success stories">‹</button>
+      <div class="hc-grid" id="homeStoryGrid"></div>
+      <button class="hc-arrow hc-next" type="button" aria-label="Next success stories">›</button>
+    </div>
     <div class="hc-empty" id="homeStoryEmpty"><div class="cs">Coming soon</div><div class="css">Client wins will appear here soon.</div></div>
     <div class="hc-more" id="homeStoryMore"><a class="btn-outline" href="success-stories.html">View all stories</a></div>
   </div>
@@ -1830,16 +1863,39 @@
       return '<a class="hc-card" href="' + href + '">' + thumb + '<div class="c-body">' + cat + '<h3>' + esc(p.title) + '</h3>' + summary + '<div class="c-meta">' + date + '</div></div></a>';
     }
     function loadCollection(type, gridId, emptyId, moreId) {
-      fetch(API + '/public/posts?type=' + type + '&limit=3')
+      fetch(API + '/public/posts?type=' + type + '&limit=12')
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var posts = (d && d.posts) || [];
           if (!posts.length) return;
-          document.getElementById(gridId).innerHTML = posts.map(postCard).join('');
+          var track = document.getElementById(gridId);
+          track.innerHTML = posts.map(postCard).join('');
+          setupCollectionSlider(track);
           var empty = document.getElementById(emptyId); if (empty) empty.style.display = 'none';
           var more = document.getElementById(moreId); if (more) more.style.display = 'block';
         })
         .catch(function () { /* leave the "coming soon" state */ });
+    }
+    function setupCollectionSlider(track) {
+      var slider = track.closest('.hc-slider');
+      if (!slider) return;
+      var prev = slider.querySelector('.hc-prev');
+      var next = slider.querySelector('.hc-next');
+      slider.classList.add('is-ready');
+      function step() {
+        var card = track.querySelector('.hc-card');
+        return card ? card.getBoundingClientRect().width + 26 : track.clientWidth;
+      }
+      function update() {
+        slider.classList.toggle('has-overflow', track.scrollWidth > track.clientWidth + 2);
+        prev.disabled = track.scrollLeft <= 2;
+        next.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 2;
+      }
+      prev.addEventListener('click', function () { track.scrollBy({ left: -step(), behavior: 'smooth' }); });
+      next.addEventListener('click', function () { track.scrollBy({ left: step(), behavior: 'smooth' }); });
+      track.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', update);
+      update();
     }
     loadCollection('blog', 'homeBlogGrid', 'homeBlogEmpty', 'homeBlogMore');
     loadCollection('story', 'homeStoryGrid', 'homeStoryEmpty', 'homeStoryMore');

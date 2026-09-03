@@ -62,6 +62,8 @@ model User {
   phone        String?
   signupNote   String?   @map("signup_note")
   designation  String?
+  // Claude model enforced for this employee. Null uses the server default.
+  aiModel      String?   @map("ai_model")
   // The Admin Lead can manage other admins and audit activity/chats.
   isLead       Boolean   @default(false) @map("is_lead")
   emailVerifiedAt DateTime? @map("email_verified_at")

@@ -98,7 +98,7 @@ Any Node host works (Elastic Beanstalk, App Runner, ECS, or a plain EC2 + PM2):
 4. Cookies across two domains: if the SPA stays on `*.vercel.app` while the API
    is on an AWS domain, set `COOKIE_SAMESITE=none` (HTTPS required). With a
    custom domain for both (`www.gethired.uk` + `api.gethired.uk`) leave it unset.
-5. `NODE_ENV=production`, strong `JWT_*`/`FILE_URL_SECRET`, SMTP + `AI_API_KEY`
+5. `NODE_ENV=production`, strong `JWT_*`/`FILE_URL_SECRET`, SMTP + `ANTHROPIC_API_KEY`
    as needed. Terminate TLS at an ALB/CloudFront — `trust proxy` is already set.
 
 ## Production checklist
@@ -107,17 +107,17 @@ Any Node host works (Elastic Beanstalk, App Runner, ECS, or a plain EC2 + PM2):
 - `NODE_ENV=production` (secure cookies, no stack traces in responses).
 - `STORAGE_DRIVER=s3` + AWS/R2 credentials (files never live on the app host).
 - SMTP credentials for the Daily Pulse (`SMTP_HOST` etc.); it logs to console when unset.
-- `OPENAI_API_KEY` for real AI drafting; set `MOCK_AI=false`.
+- `ANTHROPIC_API_KEY` for Claude AI Studio; optionally set `ANTHROPIC_MODEL`, and set `MOCK_AI=false`.
 - Serve the client (`npm run build` → `dist/`) behind the same origin or set
   `CLIENT_ORIGIN` for CORS; run the API behind TLS with `trust proxy` (already set).
 - `npx prisma migrate deploy` on release; never `migrate dev` in production.
 
 ## Key features
 
-- **Momentum Meter** — animated gold progress ring; live count of this month's applications vs target.
+- **Momentum Meter** — animated gold progress ring plus separate Month 1/2/3 package tracking.
 - **LinkedIn Tracker** — Not Started → In Progress → Complete stepper.
 - **Interview Prep Hub** — downloadable guides + coach tips.
-- **✨ Draft with AI** — server-side OpenAI cover-letter drafts from the master CV (key never leaves the server).
+- **✨ Claude AI Studio** — live Anthropic model discovery, admin model choice, and per-employee model restrictions (key never leaves the server).
 - **Daily Pulse** — nightly branded email per client ("We applied for X jobs today!"), idempotent via `daily_pulse_log`.
 - **Admin Leaderboard** — jobs per employee (today/week/month) vs prorated targets, green/amber/red.
 - **Expiry Alert** — dashboards turn amber ≤ 7 days before expiry with a Renew CTA (days computed server-side).

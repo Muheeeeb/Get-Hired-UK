@@ -7,6 +7,8 @@ import { JobTable } from '../../components/JobTable';
 import { DownloadButton, formatDate } from '../../components/files';
 import { LinkedInStepper } from '../../components/LinkedInStepper';
 import { ClientCredentials } from '../../components/ClientCredentials';
+import { ClientPersonalDetails } from '../../components/ClientPersonalDetails';
+import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
 
 /** Admin client detail — sees everything: package, domains, masters, jobs + tailored files. */
 export default function ClientDetail() {
@@ -21,6 +23,8 @@ export default function ClientDetail() {
   const [pkg, setPkg] = useState(null);
   const [domainsDraft, setDomainsDraft] = useState(null);
   const [packageChoices, setPackageChoices] = useState([]);
+  const [extendMonths, setExtendMonths] = useState('1');
+  const [extending, setExtending] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +88,19 @@ export default function ClientDetail() {
       load();
     } catch (err) {
       flash(errorMessage(err));
+    }
+  }
+
+  async function extendPackage() {
+    setExtending(true);
+    try {
+      await api.post(`/admin/clients/${id}/extend`, { months: Number(extendMonths) });
+      flash(`Package extended by ${extendMonths} month${extendMonths === '1' ? '' : 's'}`);
+      await load();
+    } catch (err) {
+      flash(errorMessage(err));
+    } finally {
+      setExtending(false);
     }
   }
 
@@ -154,7 +171,7 @@ export default function ClientDetail() {
 
           <div className="grid gap-4 sm:grid-cols-3">
             <Card className="px-6 py-5">
-              <div className="label-caps text-ink-soft">This Month</div>
+              <div className="label-caps text-ink-soft">Package Month {dash.momentum.month}</div>
               <div className="mt-2 font-display text-3xl text-navy-800">
                 {dash.momentum.applied}<span className="text-lg text-ink-soft"> / {dash.momentum.target}</span>
               </div>
@@ -172,6 +189,10 @@ export default function ClientDetail() {
               <LinkedInStepper status={dash.client.linkedinStatus} />
             </Card>
           </div>
+
+          <ClientPersonalDetails client={dash.client} className="mt-6" />
+
+          <MonthlyApplicationBreakdown months={dash.monthlyBreakdown} className="mt-6" />
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <Card>
@@ -199,6 +220,20 @@ export default function ClientDetail() {
                   ))}
                 </Select>
                 <Button type="submit">Save changes</Button>
+                <div className="border-t border-ivory-dark pt-4">
+                  <div className="mb-2 text-sm font-semibold text-navy-800">
+                    Extend package <span className="font-normal text-ink-soft">· currently {dash.packageMonths} month{dash.packageMonths === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Input id="pkg-extend" label="Additional months" type="number" min={1} max={24}
+                      value={extendMonths} onChange={(e) => setExtendMonths(e.target.value)} />
+                    <Button type="button" variant="navy"
+                      disabled={extending || Number(extendMonths) < 1 || Number(extendMonths) > 24}
+                      onClick={extendPackage}>
+                      {extending ? 'Extending…' : 'Extend package'}
+                    </Button>
+                  </div>
+                </div>
               </form>
             </Card>
 

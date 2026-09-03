@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
-import { Badge, Button, Card, CardHeader, EmptyState, Input, Skeleton } from '../../components/ui';
+import { Badge, Button, Card, CardHeader, EmptyState, Input, Select, Skeleton } from '../../components/ui';
 import { formatDate } from '../../components/files';
 
 function hours(ms) {
@@ -18,6 +18,8 @@ export default function EmployeeDetail() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [designation, setDesignation] = useState('');
+  const [aiModel, setAiModel] = useState('');
+  const [aiModels, setAiModels] = useState([]);
   const [notice, setNotice] = useState(null);
 
   const load = useCallback(() => {
@@ -25,17 +27,26 @@ export default function EmployeeDetail() {
       .then((res) => {
         setData(res.data);
         setDesignation(res.data.employee.designation || '');
+        setAiModel(res.data.employee.aiModel || '');
       })
       .catch((err) => setError(errorMessage(err)));
   }, [id]);
   useEffect(load, [load]);
 
-  async function saveDesignation(e) {
+  useEffect(() => {
+    api.get('/ai/models').then((res) => setAiModels(res.data.models || [])).catch(() => {});
+  }, []);
+
+  async function saveSettings(e) {
     e.preventDefault();
-    await api.put(`/admin/employees/${id}`, { designation });
-    setNotice('Designation saved');
-    setTimeout(() => setNotice(null), 3000);
-    load();
+    try {
+      await api.put(`/admin/employees/${id}`, { designation, aiModel: aiModel || null });
+      setNotice('Employee settings saved');
+      setTimeout(() => setNotice(null), 3000);
+      load();
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
   }
 
   if (error) {
@@ -91,7 +102,7 @@ export default function EmployeeDetail() {
 
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
-              <CardHeader title="Assigned Clients" subtitle="Monthly progress against each client's target" />
+              <CardHeader title="Assigned Clients" subtitle="Current package-month progress against each client's target" />
               {data.clients.length === 0 ? (
                 <EmptyState icon="🗂️" title="No clients assigned" />
               ) : (
@@ -101,7 +112,7 @@ export default function EmployeeDetail() {
                       <tr className="border-b border-gold-500/20 text-left">
                         <th className="label-caps px-6 py-3 text-ink-soft">Client</th>
                         <th className="label-caps px-4 py-3 text-ink-soft">Package</th>
-                        <th className="label-caps px-4 py-3 text-ink-soft">This Month</th>
+                        <th className="label-caps px-4 py-3 text-ink-soft">Package Month</th>
                         <th className="label-caps px-4 py-3 text-ink-soft">Target</th>
                       </tr>
                     </thead>
@@ -117,8 +128,8 @@ export default function EmployeeDetail() {
                             )}
                           </td>
                           <td data-label="Package" className="px-4 py-3.5 text-ink-soft">{c.packageType}</td>
-                          <td data-label="This month" className="px-4 py-3.5 tabular-nums">
-                            {c.monthApplied} / {c.monthlyJobTarget}
+                          <td data-label="Package month" className="px-4 py-3.5 tabular-nums">
+                            <span className="mr-1 text-xs text-ink-soft">M{c.packageMonth}</span> {c.monthApplied} / {c.monthlyJobTarget}
                             <span className="ml-1.5 text-xs text-ink-soft">({c.percent ?? 0}%)</span>
                           </td>
                           <td className="px-4 py-3.5">
@@ -136,11 +147,20 @@ export default function EmployeeDetail() {
 
             <div className="space-y-6">
               <Card>
-                <CardHeader title="Designation" />
-                <form onSubmit={saveDesignation} className="space-y-3 p-6">
-                  <Input id="designation" placeholder="e.g. Senior Recruitment Specialist"
+                <CardHeader title="Employee Settings" subtitle="Role details and AI Studio access" />
+                <form onSubmit={saveSettings} className="space-y-4 p-6">
+                  <Input id="designation" label="Designation" placeholder="e.g. Senior Recruitment Specialist"
                     value={designation} onChange={(e) => setDesignation(e.target.value)} maxLength={120} />
-                  <Button type="submit" className="w-full">Save</Button>
+                  <Select id="employee-ai-model" label="Allowed Claude model" value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}>
+                    <option value="">Server default</option>
+                    {aiModel && !aiModels.some((model) => model.id === aiModel) && (
+                      <option value={aiModel}>{aiModel}</option>
+                    )}
+                    {aiModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                  </Select>
+                  <p className="text-xs text-ink-soft">The employee cannot switch to any other model in AI Studio.</p>
+                  <Button type="submit" className="w-full">Save settings</Button>
                 </form>
               </Card>
 

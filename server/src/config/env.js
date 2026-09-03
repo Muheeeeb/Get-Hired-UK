@@ -59,7 +59,15 @@ export const env = {
     sendZero: process.env.PULSE_SEND_ZERO !== 'false',
   },
 
-  // Any OpenAI-compatible provider works (OpenAI, Groq, Together, Fireworks, …).
+  // Claude / Anthropic. Models are discovered from Anthropic's Models API so
+  // admins automatically see every model available to their API key.
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  anthropicBaseUrl: (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, ''),
+  // Optional override. When blank, the newest model returned by the key's
+  // Models API is used, avoiding a hard-coded model becoming stale.
+  anthropicModel: process.env.ANTHROPIC_MODEL || '',
+
+  // Legacy OpenAI-compatible fallback, retained for existing installations.
   aiApiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || '',
   aiBaseUrl: process.env.AI_BASE_URL || undefined,
   aiModel: process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',

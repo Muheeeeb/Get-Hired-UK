@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole } from '../middleware/auth.js';
-import { startOfMonth, daysUntil, dateOnly, todayISO } from '../utils/dates.js';
+import { daysUntil, dateOnly, todayISO } from '../utils/dates.js';
+import { packagePeriodWhere } from '../lib/packageTracking.js';
 
 const router = Router();
 router.use(authenticate, authorizeRole(['employee', 'admin']));
@@ -11,7 +12,6 @@ router.get('/clients', async (req, res, next) => {
   try {
     const where =
       req.user.role === 'employee' ? { assignedEmployeeId: req.user.id } : {};
-    const monthStart = startOfMonth();
     const today = dateOnly(todayISO());
 
     const clients = await prisma.clientProfile.findMany({
@@ -25,9 +25,10 @@ router.get('/clients', async (req, res, next) => {
 
     const withCounts = await Promise.all(
       clients.map(async (c) => {
+        const period = packagePeriodWhere(c, todayISO());
         const [monthCount, todayCount] = await Promise.all([
           prisma.jobApplication.count({
-            where: { clientId: c.id, applicationDate: { gte: monthStart } },
+            where: { clientId: c.id, applicationDate: period.applicationDate },
           }),
           prisma.jobApplication.count({
             where: { clientId: c.id, applicationDate: { gte: today } },
@@ -43,6 +44,8 @@ router.get('/clients', async (req, res, next) => {
           monthlyJobTarget: c.monthlyJobTarget,
           domains: c.domains,
           monthApplied: monthCount,
+          packageMonth: period.tracking.current.month,
+          packageMonths: period.tracking.totalMonths,
           todayApplied: todayCount,
           daysRemaining: daysUntil(c.expiryDate),
         };

@@ -15,7 +15,7 @@ export function MomentumMeter({ applied, target, alertMode = false }) {
 
   return (
     <div className="relative inline-flex items-center justify-center" role="img"
-      aria-label={`${applied} of ${target} jobs applied this month (${Math.round(pct * 100)}%)`}>
+      aria-label={`${applied} of ${target} jobs applied this package month (${Math.round(pct * 100)}%)`}>
       <svg width={size} height={size} className="-rotate-90">
         <defs>
           <linearGradient id="momentumArc" x1="0%" y1="0%" x2="100%" y2="100%">

@@ -19,6 +19,7 @@ function newSession(n) {
   return {
     id: `s${n}`, n,
     clientId: '', domainId: '', kind: 'cv',
+    model: '',
     messages: [], input: '', files: [],
     busy: false, error: null, saveBusyId: null, savedId: null,
   };
@@ -46,12 +47,21 @@ export default function AIStudio() {
   const [clients, setClients] = useState([]);
   const idRef = useRef(1);
   const [sessions, setSessions] = useState(() => [newSession(1)]);
+  const [modelConfig, setModelConfig] = useState({ models: [], selectedModel: '', canChoose: false, configured: true });
   const [activeId, setActiveId] = useState('s1');
   const endRef = useRef(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
     api.get('/employee/clients').then((r) => setClients(r.data.clients)).catch(() => {});
+    api.get('/ai/models').then((r) => {
+      const config = r.data;
+      setModelConfig(config);
+      setSessions((current) => current.map((session) => ({
+        ...session,
+        model: session.model || config.selectedModel || config.models?.[0]?.id || '',
+      })));
+    }).catch(() => setModelConfig((current) => ({ ...current, configured: false })));
   }, []);
 
   const active = sessions.find((s) => s.id === activeId) || sessions[0];
@@ -70,6 +80,7 @@ export default function AIStudio() {
     if (sessions.length >= MAX_TABS) return;
     idRef.current += 1;
     const s = newSession(idRef.current);
+    s.model = modelConfig.selectedModel || modelConfig.models?.[0]?.id || '';
     setSessions((prev) => [...prev, s]);
     setActiveId(s.id);
   }
@@ -79,6 +90,7 @@ export default function AIStudio() {
     if (remaining.length === 0) {
       idRef.current += 1;
       const fresh = newSession(idRef.current);
+      fresh.model = modelConfig.selectedModel || modelConfig.models?.[0]?.id || '';
       setSessions([fresh]);
       setActiveId(fresh.id);
     } else {
@@ -118,6 +130,7 @@ export default function AIStudio() {
       if (s.clientId) fd.append('clientId', s.clientId);
       if (s.domainId) fd.append('domainId', s.domainId);
       fd.append('history', JSON.stringify(history));
+      if (s.model) fd.append('model', s.model);
       outgoing.forEach((f) => fd.append('files', f));
       const { data } = await api.post('/ai/generate', fd);
       const reply = { id: uid(), role: 'assistant', content: data.draft, note: data.note || null };
@@ -227,6 +240,27 @@ export default function AIStudio() {
               <option value="">Auto</option>
               {(activeClient?.domains || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </Select>
+            {modelConfig.canChoose ? (
+              <Select id="ai-model" label="Claude model" value={active.model}
+                onChange={(e) => updateActive({ model: e.target.value })}>
+                {modelConfig.models.map((model) => (
+                  <option key={model.id} value={model.id}>{model.name}</option>
+                ))}
+              </Select>
+            ) : (
+              <div>
+                <span className="label-caps text-navy-800/70 mb-1.5 block">Claude model</span>
+                <div className="rounded-xl border border-navy-800/10 bg-ivory px-3.5 py-2.5 text-sm text-navy-800">
+                  {active.model || modelConfig.selectedModel || 'Server default'}
+                </div>
+                <p className="mt-1 text-xs text-ink-soft">Set by your administrator</p>
+              </div>
+            )}
+            {!modelConfig.configured && (
+              <p className="rounded-lg bg-alert-soft px-3 py-2 text-xs text-alert">
+                Claude is not connected yet. Add ANTHROPIC_API_KEY on the server before going live.
+              </p>
+            )}
             <div>
               <span className="label-caps text-navy-800/70 mb-1.5 block">Document type</span>
               <div className="inline-flex rounded-xl bg-ivory p-1">

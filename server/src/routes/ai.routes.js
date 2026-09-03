@@ -5,8 +5,10 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { draftCoverLetter, generateDocument } from '../lib/ai.js';
+import { defaultClaudeModel, draftCoverLetter, generateDocument, listClaudeModels } from '../lib/ai.js';
 import { tryReadFileText } from '../lib/storage.js';
+import { env } from '../config/env.js';
+import { resolveClaudeModel } from '../lib/aiAccess.js';
 
 const router = Router();
 
@@ -24,9 +26,38 @@ const schema = z.object({
   domainId: z.string().uuid().optional(),
   jobTitle: z.string().min(2).max(160),
   company: z.string().min(1).max(160),
+  model: z.string().regex(/^claude-[a-zA-Z0-9._-]+$/).max(200).optional(),
 });
 
-/** ✨ Draft with AI — admin/employee only; the OpenAI key never reaches the browser. */
+async function selectedModel(req, requested) {
+  return resolveClaudeModel({
+    role: req.user.role,
+    assignedModel: req.user.aiModel,
+    requestedModel: requested,
+    defaultModel: await defaultClaudeModel(),
+  });
+}
+
+/** Available Claude models; employees only receive their admin-approved model. */
+router.get('/models', authenticate, authorizeRole(['admin', 'employee']), async (req, res, next) => {
+  try {
+    const effectiveModel = req.user.aiModel || await defaultClaudeModel();
+    if (req.user.role === 'employee') {
+      return res.json({
+        models: [{ id: effectiveModel, name: effectiveModel }],
+        selectedModel: effectiveModel,
+        canChoose: false,
+        configured: Boolean(env.anthropicApiKey),
+      });
+    }
+    const models = await listClaudeModels();
+    res.json({ models, selectedModel: effectiveModel, canChoose: true, configured: Boolean(env.anthropicApiKey) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** ✨ Draft with AI — admin/employee only; the Anthropic key never reaches the browser. */
 router.post(
   '/cover-letter',
   authenticate,
@@ -36,6 +67,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { clientId, domainId, jobTitle, company } = req.body;
+      const model = await selectedModel(req, req.body.model);
 
       const profile = await prisma.clientProfile.findUnique({
         where: { id: clientId },
@@ -60,6 +92,7 @@ router.post(
         company,
         domainName: domain?.name,
         masterCvText,
+        model,
       });
 
       res.json(result);
@@ -72,7 +105,7 @@ router.post(
 /**
  * AI Studio: generate CVs / cover letters / freeform documents from a prompt,
  * optionally grounded in a client's master CV and an uploaded reference file.
- * Modular by design — the provider is env-configured (any OpenAI-compatible API).
+ * Claude model choice is enforced server-side for each employee.
  */
 router.post(
   '/generate',
@@ -91,12 +124,14 @@ router.post(
         domainId: z.string().uuid().optional().or(z.literal('')),
         // Prior turns, JSON-encoded (multipart carries strings only).
         history: z.string().max(200000).optional().or(z.literal('')),
+        model: z.string().regex(/^claude-[a-zA-Z0-9._-]+$/).max(200).optional().or(z.literal('')),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid request' });
       }
       const { kind, prompt, clientId, domainId } = parsed.data;
+      const model = await selectedModel(req, parsed.data.model || undefined);
 
       // Keep only well-formed turns, and only the recent ones so the prompt
       // cannot grow without bound over a long conversation.
@@ -151,7 +186,7 @@ router.post(
         : null;
 
       const result = await generateDocument({
-        kind, prompt, clientName, domainName, masterText, referenceText, history,
+        kind, prompt, clientName, domainName, masterText, referenceText, history, model,
       });
       res.json({
         ...result,

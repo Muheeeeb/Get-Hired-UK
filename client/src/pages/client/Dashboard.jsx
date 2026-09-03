@@ -8,6 +8,7 @@ import { MomentumMeter } from '../../components/MomentumMeter';
 import { LinkedInStepper } from '../../components/LinkedInStepper';
 import { JobTable } from '../../components/JobTable';
 import { DownloadButton, formatDate } from '../../components/files';
+import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -91,14 +92,14 @@ export default function ClientDashboard() {
             <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-gold-500/10 blur-3xl" aria-hidden="true" />
             <div className="relative grid items-center gap-8 lg:grid-cols-2">
               <div>
-                <div className="label-caps text-gold-300/80">This month's momentum</div>
+                <div className="label-caps text-gold-300/80">Package month {data.momentum.month} momentum</div>
                 <h1 className="mt-2 font-display text-3xl sm:text-4xl text-ivory leading-tight">
                   Welcome back,<br />{data.client.fullName.split(' ')[0]}.
                 </h1>
                 <p className="mt-4 max-w-md text-ivory/70">
                   Our team has applied to{' '}
                   <strong className="text-gold-300">{data.momentum.applied} roles</strong> for you this
-                  month — every one with a CV and cover letter tailored to the job.
+                  package month — every one with a CV and cover letter tailored to the job.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
                   <Badge tone="gold">{data.client.packageType}</Badge>
@@ -118,6 +119,8 @@ export default function ClientDashboard() {
               </div>
             </div>
           </section>
+
+          <MonthlyApplicationBreakdown months={data.monthlyBreakdown} className="mt-6 animate-rise animate-rise-1" />
 
           {/* LinkedIn tracker */}
           <Card className="mt-6 animate-rise animate-rise-1">
