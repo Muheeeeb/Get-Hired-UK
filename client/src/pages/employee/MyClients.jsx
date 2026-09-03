@@ -53,7 +53,7 @@ export default function MyClients() {
 
                   <div className="mt-4">
                     <div className="flex justify-between text-xs text-ink-soft mb-1">
-                      <span>{c.monthApplied} / {c.monthlyJobTarget} this month</span>
+                      <span>{c.monthApplied} / {c.monthlyJobTarget} in package month {c.packageMonth}</span>
                       <span>{pct}%</span>
                     </div>
                     <div className="h-2.5 rounded-full bg-ivory-dark overflow-hidden">

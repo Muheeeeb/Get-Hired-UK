@@ -11,6 +11,7 @@ import { env } from '../config/env.js';
 import { activitySummary } from '../lib/sessions.js';
 import { PACKAGE_CHOICES } from '../config/packages.js';
 import { deleteFile } from '../lib/storage.js';
+import { addCalendarMonths, packagePeriodWhere } from '../lib/packageTracking.js';
 
 /**
  * Permanently remove a user from the database so their email can be reused.
@@ -123,7 +124,7 @@ router.get('/employees/:id', async (req, res, next) => {
       where: { id: req.params.id, role: 'employee', deletedAt: null },
       select: {
         id: true, fullName: true, email: true, isActive: true, designation: true,
-        lastLoginAt: true, createdAt: true,
+        aiModel: true, lastLoginAt: true, createdAt: true,
       },
     });
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
@@ -138,8 +139,9 @@ router.get('/employees/:id', async (req, res, next) => {
     });
     const perClient = await Promise.all(
       clients.map(async (c) => {
+        const packagePeriod = packagePeriodWhere(c, todayISO());
         const [monthCount, todayCount] = await Promise.all([
-          prisma.jobApplication.count({ where: { clientId: c.id, employeeId: employee.id, applicationDate: { gte: monthStart } } }),
+          prisma.jobApplication.count({ where: { clientId: c.id, employeeId: employee.id, applicationDate: packagePeriod.applicationDate } }),
           prisma.jobApplication.count({ where: { clientId: c.id, employeeId: employee.id, applicationDate: { gte: today } } }),
         ]);
         return {
@@ -149,6 +151,8 @@ router.get('/employees/:id', async (req, res, next) => {
           packageType: c.packageType,
           monthlyJobTarget: c.monthlyJobTarget,
           monthApplied: monthCount,
+          packageMonth: packagePeriod.tracking.current.month,
+          packageMonths: packagePeriod.tracking.totalMonths,
           todayApplied: todayCount,
           targetMet: monthCount >= c.monthlyJobTarget,
           percent: c.monthlyJobTarget ? Math.round((monthCount / c.monthlyJobTarget) * 100) : null,
@@ -192,6 +196,7 @@ router.put(
     z.object({
       fullName: z.string().min(2).max(120).optional(),
       designation: z.string().max(120).optional().or(z.literal('')),
+      aiModel: z.string().regex(/^claude-[a-zA-Z0-9._-]+$/).max(200).nullable().optional(),
     })
   ),
   async (req, res, next) => {
@@ -205,8 +210,9 @@ router.put(
         data: {
           ...(req.body.fullName ? { fullName: req.body.fullName } : {}),
           ...(req.body.designation !== undefined ? { designation: req.body.designation || null } : {}),
+          ...(req.body.aiModel !== undefined ? { aiModel: req.body.aiModel || null } : {}),
         },
-        select: { id: true, fullName: true, designation: true },
+        select: { id: true, fullName: true, designation: true, aiModel: true },
       });
       res.json({ employee: updated });
     } catch (err) {
@@ -623,6 +629,25 @@ router.put(
         },
       });
       res.json({ client: updated });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  '/clients/:id/extend',
+  validate(z.object({ months: z.number().int().min(1).max(24) })),
+  async (req, res, next) => {
+    try {
+      const profile = await prisma.clientProfile.findUnique({ where: { id: req.params.id } });
+      if (!profile) return res.status(404).json({ error: 'Client not found' });
+      const expiryDate = dateOnly(addCalendarMonths(profile.expiryDate, req.body.months));
+      const updated = await prisma.clientProfile.update({
+        where: { id: profile.id },
+        data: { expiryDate },
+      });
+      res.json({ client: updated, monthsAdded: req.body.months });
     } catch (err) {
       next(err);
     }

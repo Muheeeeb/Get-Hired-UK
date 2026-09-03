@@ -1,7 +1,82 @@
 import { env } from '../config/env.js';
 
+const ANTHROPIC_VERSION = '2023-06-01';
+let modelCache = null;
+
+function anthropicHeaders() {
+  return {
+    'content-type': 'application/json',
+    'x-api-key': env.anthropicApiKey,
+    'anthropic-version': ANTHROPIC_VERSION,
+  };
+}
+
+async function anthropicJson(path, options = {}) {
+  const response = await fetch(`${env.anthropicBaseUrl}${path}`, {
+    ...options,
+    headers: { ...anthropicHeaders(), ...(options.headers || {}) },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(data?.error?.message || `Anthropic API request failed (${response.status})`);
+    err.status = response.status === 429 ? 429 : 502;
+    throw err;
+  }
+  return data;
+}
+
+/** Models currently available to this Anthropic API key (cached for five minutes). */
+export async function listClaudeModels() {
+  if (!env.anthropicApiKey) {
+    const fallback = env.anthropicModel || 'claude-sonnet-4-5';
+    return [{ id: fallback, name: fallback }];
+  }
+  if (modelCache?.expiresAt > Date.now()) return modelCache.models;
+
+  const models = [];
+  let afterId = '';
+  for (let page = 0; page < 5; page += 1) {
+    const query = new URLSearchParams({ limit: '100' });
+    if (afterId) query.set('after_id', afterId);
+    const result = await anthropicJson(`/v1/models?${query}`);
+    for (const model of result.data || []) {
+      if (model?.id?.startsWith('claude-')) {
+        models.push({ id: model.id, name: model.display_name || model.id, createdAt: model.created_at });
+      }
+    }
+    if (!result.has_more || !result.last_id) break;
+    afterId = result.last_id;
+  }
+  if (env.anthropicModel && !models.some((model) => model.id === env.anthropicModel)) {
+    models.push({ id: env.anthropicModel, name: env.anthropicModel });
+  }
+  models.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  modelCache = { models, expiresAt: Date.now() + 300_000 };
+  return models;
+}
+
+export async function defaultClaudeModel() {
+  if (env.anthropicModel) return env.anthropicModel;
+  const models = await listClaudeModels();
+  return models[0]?.id || 'claude-sonnet-4-5';
+}
+
+async function generateWithClaude({ model, system, messages, maxTokens }) {
+  const result = await anthropicJson('/v1/messages', {
+    method: 'POST',
+    body: JSON.stringify({ model: model || await defaultClaudeModel(), system, messages, max_tokens: maxTokens, temperature: 0.7 }),
+  });
+  const draft = (result.content || [])
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+    .trim();
+  if (!draft) throw Object.assign(new Error('Claude returned an empty response'), { status: 502 });
+  return { draft, source: 'claude', model: result.model || model };
+}
+
 /**
- * Server-side only cover-letter drafting. The OpenAI key never leaves this process.
+ * Server-side only drafting. Provider keys never leave this process.
  * When no key is configured and MOCK_AI=true, produces a structured local draft
  * so the feature is demoable offline.
  */
@@ -10,7 +85,7 @@ import { env } from '../config/env.js';
  * kind: 'cv' | 'cover_letter' | 'freeform'
  */
 export async function generateDocument({
-  kind, prompt, clientName, domainName, masterText, referenceText, history = [],
+  kind, prompt, clientName, domainName, masterText, referenceText, history = [], model,
 }) {
   const base =
     kind === 'cv'
@@ -36,6 +111,18 @@ export async function generateDocument({
       ]
   ).filter(Boolean).join('\n\n');
 
+  if (env.anthropicApiKey) {
+    return generateWithClaude({
+      model,
+      system,
+      maxTokens: 1500,
+      messages: [
+        ...history.map((message) => ({ role: message.role, content: message.content })),
+        { role: 'user', content: userContent },
+      ],
+    });
+  }
+
   if (env.aiApiKey) {
     const { default: OpenAI } = await import('openai');
     const openai = new OpenAI({ apiKey: env.aiApiKey, baseURL: env.aiBaseUrl });
@@ -53,17 +140,31 @@ export async function generateDocument({
   }
 
   if (!env.mockAi) {
-    const err = new Error('AI assistant is not configured (set AI_API_KEY in server/.env)');
+    const err = new Error('AI assistant is not configured (set ANTHROPIC_API_KEY in server/.env)');
     err.status = 503;
     throw err;
   }
   return {
-    draft: `— AI draft (offline mode) —\n\n${userContent}\n\n(Configure AI_API_KEY for real generations.)`,
+    draft: `— AI draft (offline mode) —\n\n${userContent}\n\n(Configure ANTHROPIC_API_KEY for real generations.)`,
     source: 'mock',
   };
 }
 
-export async function draftCoverLetter({ clientName, jobTitle, company, domainName, masterCvText }) {
+export async function draftCoverLetter({ clientName, jobTitle, company, domainName, masterCvText, model }) {
+  const system = 'You are an expert UK recruitment copywriter. Write a concise, professional cover letter (250-350 words, UK English). No placeholders like [Name] — use the details provided. Return only the letter body.';
+  const userContent = [
+    `Candidate: ${clientName}`,
+    `Applying for: ${jobTitle} at ${company}`,
+    domainName ? `Career domain: ${domainName}` : '',
+    masterCvText ? `Master CV content:\n${masterCvText.slice(0, 6000)}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  if (env.anthropicApiKey) {
+    return generateWithClaude({
+      model, system, maxTokens: 700, messages: [{ role: 'user', content: userContent }],
+    });
+  }
+
   if (env.aiApiKey) {
     const { default: OpenAI } = await import('openai');
     // The OpenAI SDK speaks to any OpenAI-compatible endpoint (Groq, Together, …)
@@ -76,19 +177,11 @@ export async function draftCoverLetter({ clientName, jobTitle, company, domainNa
       messages: [
         {
           role: 'system',
-          content:
-            'You are an expert UK recruitment copywriter. Write a concise, professional cover letter (250-350 words, UK English). No placeholders like [Name] — use the details provided. Return only the letter body.',
+          content: system,
         },
         {
           role: 'user',
-          content: [
-            `Candidate: ${clientName}`,
-            `Applying for: ${jobTitle} at ${company}`,
-            domainName ? `Career domain: ${domainName}` : '',
-            masterCvText ? `Master CV content:\n${masterCvText.slice(0, 6000)}` : '',
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
+          content: userContent,
         },
       ],
     });
@@ -96,7 +189,7 @@ export async function draftCoverLetter({ clientName, jobTitle, company, domainNa
   }
 
   if (!env.mockAi) {
-    const err = new Error('AI assistant is not configured (set AI_API_KEY in server/.env)');
+    const err = new Error('AI assistant is not configured (set ANTHROPIC_API_KEY in server/.env)');
     err.status = 503;
     throw err;
   }

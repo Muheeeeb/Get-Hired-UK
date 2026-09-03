@@ -6,8 +6,11 @@ import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select, S
 import { JobTable } from '../../components/JobTable';
 import { DownloadButton } from '../../components/files';
 import { ClientCredentials } from '../../components/ClientCredentials';
+import { ClientPersonalDetails } from '../../components/ClientPersonalDetails';
+import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
 
 const TABS = [
+  { key: 'details', label: 'Personal Details' },
   { key: 'masters', label: 'Domains & Masters' },
   { key: 'linkedin', label: 'LinkedIn' },
   { key: 'jobs', label: 'Log Jobs' },
@@ -18,7 +21,7 @@ export default function ClientWorkspace() {
   const { id } = useParams();
   const [dash, setDash] = useState(null);
   const [jobs, setJobs] = useState(null);
-  const [tab, setTab] = useState('masters');
+  const [tab, setTab] = useState('details');
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
@@ -54,7 +57,7 @@ export default function ClientWorkspace() {
         <>
           <PageHeader
             title={dash.client.fullName}
-            subtitle={`${dash.momentum.applied} of ${dash.momentum.target} applications this month · ${dash.client.packageType}`}
+            subtitle={`${dash.momentum.applied} of ${dash.momentum.target} applications in package month ${dash.momentum.month} · ${dash.client.packageType}`}
             action={
               <Link to="/employee"><Button variant="ghost">← All clients</Button></Link>
             }
@@ -63,11 +66,11 @@ export default function ClientWorkspace() {
             <div className="mb-6 rounded-xl bg-gold-100 px-4 py-3 text-sm text-navy-800" role="status">{notice}</div>
           )}
 
-          <div className="mb-6 inline-flex rounded-xl bg-white p-1 shadow-card border border-ivory-dark" role="tablist">
+          <div className="mb-6 flex w-full max-w-full overflow-x-auto rounded-xl border border-ivory-dark bg-white p-1 shadow-card" role="tablist">
             {TABS.map((t) => (
               <button key={t.key} role="tab" aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
                   tab === t.key ? 'bg-navy-800 text-ivory' : 'text-ink-soft hover:text-navy-800'
                 }`}>
                 {t.label}
@@ -75,6 +78,12 @@ export default function ClientWorkspace() {
             ))}
           </div>
 
+          {tab === 'details' && (
+            <div className="space-y-6">
+              <ClientPersonalDetails client={dash.client} className="animate-rise" />
+              <MonthlyApplicationBreakdown months={dash.monthlyBreakdown} className="animate-rise animate-rise-1" />
+            </div>
+          )}
           {tab === 'jobs' && <JobsTab clientId={id} dash={dash} jobs={jobs} onChanged={() => { load(); flash('Saved'); }} />}
           {tab === 'masters' && <MastersTab clientId={id} dash={dash} onChanged={() => { load(); flash('Master document uploaded'); }} />}
           {tab === 'linkedin' && <LinkedInTab clientId={id} dash={dash} onChanged={() => { load(); flash('LinkedIn status updated'); }} />}

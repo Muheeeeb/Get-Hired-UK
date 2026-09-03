@@ -5,7 +5,8 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole, loadClientScope } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { buildFileKey, saveFile, deleteFile } from '../lib/storage.js';
-import { startOfMonth, daysUntil, dateOnly } from '../utils/dates.js';
+import { daysUntil, dateOnly, todayISO } from '../utils/dates.js';
+import { buildPackageMonths } from '../lib/packageTracking.js';
 import { encryptSecret, decryptSecret, credentialsEnabled } from '../lib/secrets.js';
 
 const router = Router();
@@ -67,11 +68,10 @@ const upload = multer({
 router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
   try {
     const profile = req.clientProfile;
-    const monthStart = startOfMonth();
-
-    const [monthCount, domains, resourceCount, recentJobs] = await Promise.all([
-      prisma.jobApplication.count({
-        where: { clientId: profile.id, applicationDate: { gte: monthStart } },
+    const [packageJobs, domains, resourceCount, recentJobs] = await Promise.all([
+      prisma.jobApplication.findMany({
+        where: { clientId: profile.id },
+        select: { applicationDate: true },
       }),
       prisma.domain.findMany({
         where: { clientId: profile.id },
@@ -92,6 +92,13 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
     ]);
 
     const daysRemaining = daysUntil(profile.expiryDate);
+    const packageTracking = buildPackageMonths({
+      packageStartedAt: profile.packageStartedAt,
+      expiryDate: profile.expiryDate,
+      monthlyJobTarget: profile.monthlyJobTarget,
+      applicationDates: packageJobs.map((job) => job.applicationDate),
+      today: todayISO(),
+    });
 
     const payload = {
       client: {
@@ -103,18 +110,24 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
         ...(req.user.role !== 'client' ? {
           country: profile.country, dateOfBirth: profile.dateOfBirth, niNumber: profile.niNumber,
           visaStatus: profile.visaStatus, visaExpiryDate: profile.visaExpiryDate,
-          residentialAddress: profile.residentialAddress, postcode: profile.postcode, notes: profile.notes,
+          residentialAddress: profile.residentialAddress, postcode: profile.postcode,
+          phone: profile.user.phone, notes: profile.notes,
         } : {}),
       },
       momentum: {
-        applied: monthCount,
+        applied: packageTracking.current.applications,
         target: profile.monthlyJobTarget,
-        percent: Math.min(100, Math.round((monthCount / profile.monthlyJobTarget) * 100)),
+        percent: packageTracking.current.percent,
+        month: packageTracking.current.month,
+        startDate: packageTracking.current.startDate,
+        endDate: packageTracking.current.endDate,
       },
+      monthlyBreakdown: packageTracking.months,
+      packageMonths: packageTracking.totalMonths,
       expiry: {
         // Days-remaining is computed here, server-side — never from the browser clock.
         daysRemaining,
-        expiringSoon: daysRemaining <= 7,
+        expiringSoon: daysRemaining >= 0 && daysRemaining <= 7,
         expired: daysRemaining < 0,
         expiryDate: profile.expiryDate,
       },

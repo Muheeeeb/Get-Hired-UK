@@ -160,12 +160,12 @@ export function AppShell({ children, alertMode = false }) {
   );
 
   return (
-    <div className="min-h-screen bg-ivory">
+    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-ivory">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block">{sidebar}</aside>
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex items-center justify-between bg-navy-900 px-4 py-3 lg:hidden">
+      <header className="sticky top-0 z-40 flex w-full items-center justify-between bg-navy-900 px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
           <LogoChip size={32} />
           <span className="font-display text-ivory">Get Hired Global</span>
@@ -200,8 +200,8 @@ export function AppShell({ children, alertMode = false }) {
         </div>
       )}
 
-      <main className="lg:pl-64">
-        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-10">{children}</div>
+      <main className="min-h-[100dvh] min-w-0 w-full lg:pl-64">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-6 lg:px-10">{children}</div>
       </main>
 
       <ChangePasswordModal open={showAccount} onClose={() => { if (!profileRequired) setShowAccount(false); }} user={user} requiredProfile={profileRequired} onProfileComplete={() => setProfileRequired(false)} />
