@@ -379,8 +379,8 @@ function ClientProfile({ requiredProfile, onComplete }) {
     <div className="rounded-xl border border-navy-800/10 bg-white/70 p-3">
       <p className="text-sm font-semibold text-navy-800">Job board logins (optional)</p>
       <p className="mt-0.5 text-xs text-ink-soft">
-        Add these and our specialists can apply for roles directly from your own accounts.
-        Passwords are stored encrypted and only your assigned specialist and an admin can see them.
+        Add these and our admin team can apply for roles directly from your own accounts.
+        Passwords are stored encrypted and only an admin can see them.
         You can leave any of these blank.
       </p>
       <div className="mt-3 space-y-3">
