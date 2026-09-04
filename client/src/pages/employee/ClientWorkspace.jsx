@@ -5,7 +5,6 @@ import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select, Spinner } from '../../components/ui';
 import { JobTable } from '../../components/JobTable';
 import { DownloadButton } from '../../components/files';
-import { ClientCredentials } from '../../components/ClientCredentials';
 import { ClientPersonalDetails } from '../../components/ClientPersonalDetails';
 import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
 
@@ -14,7 +13,6 @@ const TABS = [
   { key: 'masters', label: 'Domains & Masters' },
   { key: 'linkedin', label: 'LinkedIn' },
   { key: 'jobs', label: 'Log Jobs' },
-  { key: 'logins', label: 'Logins' },
 ];
 
 export default function ClientWorkspace() {
@@ -87,7 +85,6 @@ export default function ClientWorkspace() {
           {tab === 'jobs' && <JobsTab clientId={id} dash={dash} jobs={jobs} onChanged={() => { load(); flash('Saved'); }} />}
           {tab === 'masters' && <MastersTab clientId={id} dash={dash} onChanged={() => { load(); flash('Master document uploaded'); }} />}
           {tab === 'linkedin' && <LinkedInTab clientId={id} dash={dash} onChanged={() => { load(); flash('LinkedIn status updated'); }} />}
-          {tab === 'logins' && <ClientCredentials clientId={id} />}
         </>
       )}
     </AppShell>

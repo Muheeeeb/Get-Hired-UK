@@ -414,15 +414,15 @@ router.put('/me/credentials', authorizeRole(['client']), async (req, res, next) 
   } catch (err) { next(err); }
 });
 
-/** Team view of a client's logins — masked. Scope: admin all, employee assigned only. */
-router.get('/:id/credentials', loadClientScope, async (req, res, next) => {
+/** Admin view of a client's logins — masked. Employees cannot access credentials. */
+router.get('/:id/credentials', authorizeRole(['admin']), loadClientScope, async (req, res, next) => {
   try {
     res.json({ credentials: await listCredentials(req.clientProfile.id), services: SERVICES });
   } catch (err) { next(err); }
 });
 
-/** Admin/employee can also enter them on a client's behalf (e.g. sent by email). */
-router.put('/:id/credentials', authorizeRole(['admin', 'employee']), loadClientScope, async (req, res, next) => {
+/** An admin can also enter them on a client's behalf (e.g. sent by email). */
+router.put('/:id/credentials', authorizeRole(['admin']), loadClientScope, async (req, res, next) => {
   try {
     const result = await saveCredentials(req.clientProfile.id, req.body, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
@@ -431,11 +431,10 @@ router.put('/:id/credentials', authorizeRole(['admin', 'employee']), loadClientS
 });
 
 /**
- * Reveal one password so the team can apply as the client. Admin and the client's
- * assigned employee only (loadClientScope enforces the assignment), and every
- * reveal is written to the access log first so it is always attributable.
+ * Reveal one password so an admin can apply as the client. Every reveal is
+ * written to the access log first so it is always attributable.
  */
-router.post('/:id/credentials/:service/reveal', authorizeRole(['admin', 'employee']), loadClientScope, async (req, res, next) => {
+router.post('/:id/credentials/:service/reveal', authorizeRole(['admin']), loadClientScope, async (req, res, next) => {
   try {
     const { service } = req.params;
     if (!SERVICES.includes(service)) return res.status(400).json({ error: 'Unknown service' });
