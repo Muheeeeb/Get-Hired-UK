@@ -62,9 +62,12 @@ export async function defaultClaudeModel() {
 }
 
 async function generateWithClaude({ model, system, messages, maxTokens }) {
+  const resolvedModel = model || await defaultClaudeModel();
   const result = await anthropicJson('/v1/messages', {
     method: 'POST',
-    body: JSON.stringify({ model: model || await defaultClaudeModel(), system, messages, max_tokens: maxTokens, temperature: 0.7 }),
+    body: JSON.stringify(buildClaudeRequest({
+      model: resolvedModel, system, messages, maxTokens,
+    })),
   });
   const draft = (result.content || [])
     .filter((block) => block.type === 'text')
@@ -73,6 +76,12 @@ async function generateWithClaude({ model, system, messages, maxTokens }) {
     .trim();
   if (!draft) throw Object.assign(new Error('Claude returned an empty response'), { status: 502 });
   return { draft, source: 'claude', model: result.model || model };
+}
+
+export function buildClaudeRequest({ model, system, messages, maxTokens }) {
+  // Newer Claude models (including Sonnet 5) reject `temperature` rather than
+  // silently ignoring it, so keep the request to universally supported fields.
+  return { model, system, messages, max_tokens: maxTokens };
 }
 
 /**
