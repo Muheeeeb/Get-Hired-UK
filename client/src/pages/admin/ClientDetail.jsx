@@ -192,6 +192,8 @@ export default function ClientDetail() {
 
           <ClientPersonalDetails client={dash.client} className="mt-6" />
 
+          <ClientCredentials clientId={id} canViewLog />
+
           <MonthlyApplicationBreakdown months={dash.monthlyBreakdown} className="mt-6" />
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -267,8 +269,6 @@ export default function ClientDetail() {
               </div>
             </Card>
           </div>
-
-          <ClientCredentials clientId={id} canViewLog />
 
           <Card className="mt-6">
             <CardHeader title="Master Documents" subtitle="Visible to the client" />

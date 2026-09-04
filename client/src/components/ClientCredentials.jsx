@@ -88,7 +88,7 @@ export function ClientCredentials({ clientId, canViewLog = false }) {
       {!creds ? (
         <div className="p-6 text-sm text-ink-soft">Loading…</div>
       ) : creds.length === 0 ? (
-        <EmptyState icon="🔒" title="No logins saved" hint="The client can add these from their portal under Account." />
+        <EmptyState icon="🔒" title="No logins submitted yet" hint="The client has not saved any job-board usernames and passwords yet." />
       ) : (
         <ul className="divide-y divide-ivory-dark">
           {creds.map((c) => (

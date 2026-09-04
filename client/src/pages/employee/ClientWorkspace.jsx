@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select, Spinner } from '../../components/ui';
 import { JobTable } from '../../components/JobTable';
 import { DownloadButton } from '../../components/files';
+import { ClientCredentials } from '../../components/ClientCredentials';
 import { ClientPersonalDetails } from '../../components/ClientPersonalDetails';
 import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
 
@@ -17,6 +19,7 @@ const TABS = [
 
 export default function ClientWorkspace() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [dash, setDash] = useState(null);
   const [jobs, setJobs] = useState(null);
   const [tab, setTab] = useState('details');
@@ -65,7 +68,7 @@ export default function ClientWorkspace() {
           )}
 
           <div className="mb-6 flex w-full max-w-full overflow-x-auto rounded-xl border border-ivory-dark bg-white p-1 shadow-card" role="tablist">
-            {TABS.map((t) => (
+            {[...TABS, ...(user?.role === 'admin' ? [{ key: 'logins', label: 'Job board logins' }] : [])].map((t) => (
               <button key={t.key} role="tab" aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
                 className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
@@ -85,6 +88,7 @@ export default function ClientWorkspace() {
           {tab === 'jobs' && <JobsTab clientId={id} dash={dash} jobs={jobs} onChanged={() => { load(); flash('Saved'); }} />}
           {tab === 'masters' && <MastersTab clientId={id} dash={dash} onChanged={() => { load(); flash('Master document uploaded'); }} />}
           {tab === 'linkedin' && <LinkedInTab clientId={id} dash={dash} onChanged={() => { load(); flash('LinkedIn status updated'); }} />}
+          {user?.role === 'admin' && tab === 'logins' && <ClientCredentials clientId={id} canViewLog />}
         </>
       )}
     </AppShell>
