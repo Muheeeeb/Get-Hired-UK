@@ -94,8 +94,11 @@ export default function ClientDetail() {
   async function extendPackage() {
     setExtending(true);
     try {
-      await api.post(`/admin/clients/${id}/extend`, { months: Number(extendMonths) });
-      flash(`Package extended by ${extendMonths} month${extendMonths === '1' ? '' : 's'}`);
+      const { data } = await api.post(`/admin/clients/${id}/extend`, { months: Number(extendMonths) });
+      flash(
+        `Package extended: ${formatDate(data.previousExpiryDate)} → ${formatDate(data.expiryDate)} ` +
+        `(${data.packageMonths} package month${data.packageMonths === 1 ? '' : 's'})`,
+      );
       await load();
     } catch (err) {
       flash(errorMessage(err));

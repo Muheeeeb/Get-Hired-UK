@@ -16,9 +16,10 @@ Status: Complete
 
 Status: Complete
 
-- Admin Client Detail supports extending a package by 1–24 calendar months.
+- Admin Client Detail supports extending a package by 1–24 calendar months and confirms the exact old/new expiry and resulting duration.
 - Application totals are split into anniversary-based package months (Month 1, Month 2, Month 3, and beyond).
-- Expiry dates are inclusive and calendar month-end clamping is handled (for example, 31 January + one month becomes 28/29 February).
+- Expiry dates are inclusive and calendar month-end clamping is handled without drift (for example, 31 January → 28 February → 31 March).
+- Package start, current expiry and total duration are shown alongside the monthly breakdown in client, employee and admin views.
 - Separate monthly totals and progress are displayed on the client dashboard, admin client view and assigned employee workspace.
 - Employee client-list progress now identifies and counts the current package month.
 
@@ -42,6 +43,8 @@ Status: Complete
 - Employees receive only their assigned model and server-side authorization rejects attempts to request another model.
 - The former OpenAI-compatible integration remains as a backwards-compatible fallback.
 - Production is configured with Claude Sonnet 5, and a live generation returned successfully.
+- AI Studio conversations are stored per admin/employee in the database and restored after a browser refresh.
+- Saved conversations are private to their owner, limited to five tabs, and bounded to prevent unrestrained database/context growth.
 - AI Studio reads attached PDF, legacy Word (`.doc`), modern Word (`.docx`), TXT and Markdown documents.
 - Stored master documents use the same extraction path, including documents stored in S3.
 - The prompt limit is 50,000 characters; recent conversation history is retained within a bounded 240,000-character context budget.
@@ -59,7 +62,7 @@ Status: Complete
 
 ## Verification performed
 
-- `npm test` in `server`: 26/26 passing.
+- `npm test` in `server`: 34/34 passing.
 - `npx prisma validate`: passing.
 - `npx prisma generate`: passing.
 - `npm run build` in `client`: passing.
@@ -77,6 +80,8 @@ Status: Complete
   - prompts longer than the former 6,000-character ceiling;
   - long-context conversational follow-ups;
   - formatted PDF and DOCX generation, download and read-back.
+  - AI conversation creation, reload persistence, follow-up continuation and cross-user isolation;
+  - month-end package extension (28 February to 31 March), immediate client-dashboard expiry refresh and separate monthly application totals.
 - Temporary database, API and test data were removed after verification.
 
 ## Deployment checklist

@@ -105,6 +105,7 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
         id: profile.id,
         fullName: profile.user.fullName,
         packageType: profile.packageType,
+        packageStartedAt: profile.packageStartedAt,
         linkedinStatus: profile.linkedinStatus,
         monthlyJobTarget: profile.monthlyJobTarget,
         ...(req.user.role !== 'client' ? {

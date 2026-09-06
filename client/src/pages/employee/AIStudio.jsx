@@ -18,7 +18,7 @@ const uid = () => `m${++seq}`;
 
 function newSession(n) {
   return {
-    id: `s${n}`, n,
+    id: `draft-${n}`, conversationId: null, n,
     clientId: '', domainId: '', kind: 'cv',
     model: '',
     messages: [], input: '', files: [],
@@ -49,7 +49,8 @@ export default function AIStudio() {
   const idRef = useRef(1);
   const [sessions, setSessions] = useState(() => [newSession(1)]);
   const [modelConfig, setModelConfig] = useState({ models: [], selectedModel: '', canChoose: false, configured: true });
-  const [activeId, setActiveId] = useState('s1');
+  const [activeId, setActiveId] = useState('draft-1');
+  const [restoring, setRestoring] = useState(true);
   const endRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -60,9 +61,27 @@ export default function AIStudio() {
       setModelConfig(config);
       setSessions((current) => current.map((session) => ({
         ...session,
-        model: session.model || config.selectedModel || config.models?.[0]?.id || '',
+        model: config.canChoose
+          ? (session.model || config.selectedModel || config.models?.[0]?.id || '')
+          : (config.selectedModel || config.models?.[0]?.id || ''),
       })));
     }).catch(() => setModelConfig((current) => ({ ...current, configured: false })));
+
+    api.get('/ai/conversations').then((r) => {
+      const saved = r.data.conversations || [];
+      if (!saved.length) return;
+      const restored = saved.map((conversation, index) => ({
+        ...newSession(index + 1),
+        ...conversation,
+        conversationId: conversation.id,
+        n: index + 1,
+        input: '', files: [], busy: false, error: null,
+        saveBusyId: null, savedId: null, exportBusyId: null,
+      }));
+      idRef.current = restored.length;
+      setSessions(restored);
+      setActiveId(restored.at(-1).id);
+    }).catch(() => {}).finally(() => setRestoring(false));
   }, []);
 
   const active = sessions.find((s) => s.id === activeId) || sessions[0];
@@ -87,6 +106,7 @@ export default function AIStudio() {
   }
 
   function closeSession(id) {
+    const closing = sessions.find((s) => s.id === id);
     const remaining = sessions.filter((s) => s.id !== id);
     if (remaining.length === 0) {
       idRef.current += 1;
@@ -97,6 +117,9 @@ export default function AIStudio() {
     } else {
       setSessions(remaining);
       if (id === activeId) setActiveId(remaining[0].id);
+    }
+    if (closing?.conversationId) {
+      api.delete(`/ai/conversations/${closing.conversationId}`).catch(() => {});
     }
   }
 
@@ -116,7 +139,7 @@ export default function AIStudio() {
     e?.preventDefault();
     const s = active;
     const text = s.input.trim();
-    if (!text || s.busy) return;
+    if (!text || s.busy || restoring) return;
 
     const outgoing = s.files;
     const history = s.messages.map((m) => ({ role: m.role, content: m.content }));
@@ -132,10 +155,18 @@ export default function AIStudio() {
       if (s.domainId) fd.append('domainId', s.domainId);
       fd.append('history', JSON.stringify(history));
       if (s.model) fd.append('model', s.model);
+      if (s.conversationId) fd.append('conversationId', s.conversationId);
       outgoing.forEach((f) => fd.append('files', f));
       const { data } = await api.post('/ai/generate', fd);
-      const reply = { id: uid(), role: 'assistant', content: data.draft, note: data.note || null };
-      setSessions((prev) => prev.map((x) => (x.id === s.id ? { ...x, busy: false, messages: [...x.messages, reply] } : x)));
+      setSessions((prev) => prev.map((x) => (x.id === s.id ? {
+        ...x,
+        conversationId: data.conversationId,
+        busy: false,
+        messages: data.messages || [
+          ...x.messages,
+          { id: uid(), role: 'assistant', content: data.draft, note: data.note || null },
+        ],
+      } : x)));
     } catch (err) {
       patch(s.id, { busy: false, error: errorMessage(err, 'Generation failed') });
     }
@@ -208,7 +239,7 @@ export default function AIStudio() {
     <AppShell>
       <PageHeader
         title="AI Studio"
-        subtitle="Chat with the assistant to draft and refine CVs and cover letters — up to five clients in parallel"
+        subtitle="Chat with the assistant to draft and refine CVs and cover letters — conversations are saved automatically"
       />
 
       {/* Conversation tabs */}
@@ -310,11 +341,16 @@ export default function AIStudio() {
 
         {/* ---------------- conversation ---------------- */}
         <Card className="animate-rise animate-rise-1 flex flex-col">
-          <CardHeader title="Conversation" subtitle="Download or save any draft the assistant produces" />
+          <CardHeader title="Conversation" subtitle="Saved automatically · download or save any draft" />
 
           {/* transcript */}
           <div className="flex-1 space-y-5 overflow-y-auto p-6" style={{ minHeight: '46vh', maxHeight: '62vh' }}>
-            {active.messages.length === 0 && !active.busy && (
+            {restoring && active.messages.length === 0 && (
+              <div className="flex items-center justify-center gap-2 py-14 text-sm text-ink-soft">
+                <Spinner /> Restoring saved conversations…
+              </div>
+            )}
+            {!restoring && active.messages.length === 0 && !active.busy && (
               <div className="py-14 text-center">
                 <div className="mb-2 text-3xl">✨</div>
                 <p className="text-sm text-ink-soft">
@@ -421,7 +457,7 @@ export default function AIStudio() {
                 placeholder={active.messages.length ? 'Ask a follow-up…' : 'Describe the document you need…'}
                 className="max-h-40 min-h-[40px] flex-1 resize-y rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/30"
               />
-              <Button type="submit" disabled={active.busy || !active.input.trim()} className="!px-4 shrink-0">
+              <Button type="submit" disabled={restoring || active.busy || !active.input.trim()} className="!px-4 shrink-0">
                 {active.busy ? <Spinner /> : 'Send'}
               </Button>
             </div>
