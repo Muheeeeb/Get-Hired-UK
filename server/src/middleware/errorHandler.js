@@ -9,6 +9,9 @@ export function errorHandler(err, req, res, next) {
   if (err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ error: 'File too large (max 10 MB)' });
   }
+  if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({ error: 'Too many files (maximum 6)' });
+  }
   if (err.message?.startsWith('Unsupported file type')) {
     return res.status(400).json({ error: err.message });
   }
@@ -19,6 +22,6 @@ export function errorHandler(err, req, res, next) {
   console.error(`[error] ${req.method} ${req.originalUrl}:`, err.message);
   if (!env.isProd) console.error(err.stack);
   res.status(err.status || 500).json({
-    error: env.isProd ? 'Internal server error' : err.message,
+    error: err.publicMessage || (env.isProd ? 'Internal server error' : err.message),
   });
 }

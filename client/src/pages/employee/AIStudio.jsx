@@ -11,6 +11,7 @@ const KINDS = [
 
 const MAX_TABS = 5;
 const MAX_FILES = 6;
+const MAX_PROMPT_CHARS = 50_000;
 
 let seq = 0;
 const uid = () => `m${++seq}`;
@@ -21,7 +22,7 @@ function newSession(n) {
     clientId: '', domainId: '', kind: 'cv',
     model: '',
     messages: [], input: '', files: [],
-    busy: false, error: null, saveBusyId: null, savedId: null,
+    busy: false, error: null, saveBusyId: null, savedId: null, exportBusyId: null,
   };
 }
 
@@ -144,13 +145,39 @@ export default function AIStudio() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   }
 
-  function downloadMsg(msg) {
-    const label = active.kind === 'cv' ? 'CV' : active.kind === 'cover_letter' ? 'Cover Letter' : 'Document';
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([msg.content], { type: 'text/plain' }));
-    a.download = `${label} — AI draft.txt`;
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function downloadTxt(msg) {
+    const label = active.kind === 'cv' ? 'CV' : active.kind === 'cover_letter' ? 'Cover Letter' : 'Document';
+    triggerDownload(new Blob([msg.content], { type: 'text/plain' }), `${label} — AI draft.txt`);
+  }
+
+  async function downloadFormatted(msg, format) {
+    const s = active;
+    const busyId = `${msg.id}:${format}`;
+    patch(s.id, { exportBusyId: busyId, error: null });
+    try {
+      const { data } = await api.post('/ai/export', {
+        content: msg.content,
+        kind: s.kind,
+        format,
+      }, { responseType: 'blob' });
+      const label = s.kind === 'cv' ? 'CV' : s.kind === 'cover_letter' ? 'Cover-Letter' : 'Document';
+      triggerDownload(data, `${label}-AI-Draft.${format}`);
+    } catch (err) {
+      patch(s.id, { error: errorMessage(err, 'Download failed') });
+    } finally {
+      patch(s.id, { exportBusyId: null });
+    }
   }
 
   async function copyMsg(msg) {
@@ -327,7 +354,17 @@ export default function AIStudio() {
                         className="rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft transition hover:bg-navy-800/5 hover:text-navy-800">
                         Copy
                       </button>
-                      <button type="button" onClick={() => downloadMsg(m)}
+                      <button type="button" onClick={() => downloadFormatted(m, 'pdf')}
+                        disabled={active.exportBusyId === `${m.id}:pdf`}
+                        className="rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft transition hover:bg-navy-800/5 hover:text-navy-800 disabled:opacity-50">
+                        {active.exportBusyId === `${m.id}:pdf` ? 'Creating PDF…' : 'Download PDF'}
+                      </button>
+                      <button type="button" onClick={() => downloadFormatted(m, 'docx')}
+                        disabled={active.exportBusyId === `${m.id}:docx`}
+                        className="rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft transition hover:bg-navy-800/5 hover:text-navy-800 disabled:opacity-50">
+                        {active.exportBusyId === `${m.id}:docx` ? 'Creating Word…' : 'Download Word'}
+                      </button>
+                      <button type="button" onClick={() => downloadTxt(m)}
                         className="rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft transition hover:bg-navy-800/5 hover:text-navy-800">
                         Download .txt
                       </button>
@@ -379,7 +416,7 @@ export default function AIStudio() {
                 📎
               </label>
               <textarea
-                rows={1} value={active.input} onKeyDown={onKeyDown}
+                rows={1} value={active.input} maxLength={MAX_PROMPT_CHARS} onKeyDown={onKeyDown}
                 onChange={(e) => updateActive({ input: e.target.value })}
                 placeholder={active.messages.length ? 'Ask a follow-up…' : 'Describe the document you need…'}
                 className="max-h-40 min-h-[40px] flex-1 resize-y rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/30"
@@ -388,9 +425,10 @@ export default function AIStudio() {
                 {active.busy ? <Spinner /> : 'Send'}
               </Button>
             </div>
-            <p className="mt-1.5 text-[11px] text-ink-soft">
-              Enter to send · Shift+Enter for a new line · .txt/.md files are read as text
-            </p>
+            <div className="mt-1.5 flex flex-wrap justify-between gap-2 text-[11px] text-ink-soft">
+              <p>Enter to send · Shift+Enter for a new line · PDF, Word, TXT and Markdown files are supported</p>
+              <p>{active.input.length.toLocaleString()} / {MAX_PROMPT_CHARS.toLocaleString()}</p>
+            </div>
           </form>
         </Card>
       </div>

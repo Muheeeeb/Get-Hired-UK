@@ -117,7 +117,7 @@ Any Node host works (Elastic Beanstalk, App Runner, ECS, or a plain EC2 + PM2):
 - **Momentum Meter** — animated gold progress ring plus separate Month 1/2/3 package tracking.
 - **LinkedIn Tracker** — Not Started → In Progress → Complete stepper.
 - **Interview Prep Hub** — downloadable guides + coach tips.
-- **✨ Claude AI Studio** — live Anthropic model discovery, admin model choice, and per-employee model restrictions (key never leaves the server).
+- **✨ Claude AI Studio** — PDF/Word/TXT/Markdown CV ingestion, conversational drafting with long-context follow-ups, formatted PDF/DOCX export, live Anthropic model discovery, admin model choice, and per-employee model restrictions (the key never leaves the server).
 - **Daily Pulse** — nightly branded email per client ("We applied for X jobs today!"), idempotent via `daily_pulse_log`.
 - **Admin Leaderboard** — jobs per employee (today/week/month) vs prorated targets, green/amber/red.
 - **Expiry Alert** — dashboards turn amber ≤ 7 days before expiry with a Renew CTA (days computed server-side).
