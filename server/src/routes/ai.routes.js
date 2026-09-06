@@ -9,17 +9,49 @@ import { defaultClaudeModel, draftCoverLetter, generateDocument, listClaudeModel
 import { tryReadFileText } from '../lib/storage.js';
 import { env } from '../config/env.js';
 import { resolveClaudeModel } from '../lib/aiAccess.js';
+import { extractReferenceFiles, SUPPORTED_DOCUMENT_EXTENSIONS } from '../lib/documentText.js';
+import { buildDocx, buildPdf } from '../lib/documentExport.js';
 
 const router = Router();
 
 // The studio is conversational — a specialist iterating on a draft sends several
 // turns a minute, so this is higher than a one-shot generator would need.
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, limit: 30, legacyHeaders: false });
+export const MAX_AI_PROMPT_CHARS = 50_000;
+export const MAX_AI_HISTORY_JSON_CHARS = 800_000;
+const MAX_HISTORY_MESSAGE_CHARS = 60_000;
+const MAX_HISTORY_CONTEXT_CHARS = 240_000;
 
 const refUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 6 },
+  fileFilter(req, file, cb) {
+    const lower = file.originalname.toLowerCase();
+    const supported = SUPPORTED_DOCUMENT_EXTENSIONS.some((ext) => lower.endsWith(ext));
+    cb(supported ? null : new Error('Unsupported file type. Allowed: pdf, doc, docx, txt, md'), supported);
+  },
 });
+
+export function parseConversationHistory(encoded) {
+  if (!encoded) return [];
+  const raw = JSON.parse(encoded);
+  if (!Array.isArray(raw)) throw new Error('Conversation history must be an array');
+
+  const newestFirst = raw
+    .filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+    .slice(-30)
+    .reverse();
+  const kept = [];
+  let used = 0;
+  for (const message of newestFirst) {
+    if (used >= MAX_HISTORY_CONTEXT_CHARS) break;
+    const content = message.content.slice(0, Math.min(MAX_HISTORY_MESSAGE_CHARS, MAX_HISTORY_CONTEXT_CHARS - used));
+    if (!content) continue;
+    kept.push({ role: message.role, content });
+    used += content.length;
+  }
+  return kept.reverse();
+}
 
 const schema = z.object({
   clientId: z.string().uuid(),
@@ -119,11 +151,11 @@ router.post(
     try {
       const schema = z.object({
         kind: z.enum(['cv', 'cover_letter', 'freeform']).default('freeform'),
-        prompt: z.string().min(3).max(6000),
+        prompt: z.string().min(3).max(MAX_AI_PROMPT_CHARS),
         clientId: z.string().uuid().optional().or(z.literal('')),
         domainId: z.string().uuid().optional().or(z.literal('')),
         // Prior turns, JSON-encoded (multipart carries strings only).
-        history: z.string().max(200000).optional().or(z.literal('')),
+        history: z.string().max(MAX_AI_HISTORY_JSON_CHARS).optional().or(z.literal('')),
         model: z.string().regex(/^claude-[a-zA-Z0-9._-]+$/).max(200).optional().or(z.literal('')),
       });
       const parsed = schema.safeParse(req.body);
@@ -136,18 +168,10 @@ router.post(
       // Keep only well-formed turns, and only the recent ones so the prompt
       // cannot grow without bound over a long conversation.
       let history = [];
-      if (parsed.data.history) {
-        try {
-          const raw = JSON.parse(parsed.data.history);
-          if (Array.isArray(raw)) {
-            history = raw
-              .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-              .slice(-20)
-              .map((m) => ({ role: m.role, content: m.content.slice(0, 12000) }));
-          }
-        } catch {
-          return res.status(400).json({ error: 'Invalid conversation history' });
-        }
+      try {
+        history = parseConversationHistory(parsed.data.history);
+      } catch {
+        return res.status(400).json({ error: 'Invalid conversation history' });
       }
 
       let clientName;
@@ -172,27 +196,25 @@ router.post(
         masterText = masterCv ? await tryReadFileText(masterCv.fileKey) : null;
       }
 
-      // Reference files: plain-text formats are read directly, each labelled so
-      // the model can tell them apart. Anything else is reported back, not silently dropped.
+      // PDFs, Word files, and plain text are extracted in memory and labelled so
+      // the model can distinguish multiple references.
       const uploaded = [...(req.files?.files || []), ...(req.files?.file || [])];
-      const readable = uploaded.filter((f) => /\.(txt|md)$/i.test(f.originalname));
-      const skipped = uploaded.filter((f) => !/\.(txt|md)$/i.test(f.originalname));
-      // Share the text budget across the files so one big upload can't crowd out the rest.
-      const perFile = readable.length ? Math.floor(30000 / readable.length) : 0;
-      const referenceText = readable.length
-        ? readable
-            .map((f) => `--- ${f.originalname} ---\n${f.buffer.toString('utf8').slice(0, perFile)}`)
-            .join('\n\n')
-        : null;
+      let extracted;
+      try {
+        extracted = await extractReferenceFiles(uploaded);
+      } catch (err) {
+        return res.status(err.status || 400).json({ error: err.publicMessage || 'A reference file could not be read' });
+      }
 
       const result = await generateDocument({
-        kind, prompt, clientName, domainName, masterText, referenceText, history, model,
+        kind, prompt, clientName, domainName, masterText,
+        referenceText: extracted.referenceText, history, model,
       });
       res.json({
         ...result,
-        usedFiles: readable.map((f) => f.originalname),
-        note: skipped.length
-          ? `Ignored ${skipped.length} file${skipped.length === 1 ? '' : 's'} (${skipped.map((f) => f.originalname).join(', ')}) — only .txt/.md can be read as text.`
+        usedFiles: extracted.usedFiles,
+        note: extracted.truncatedFiles.length
+          ? `Read ${extracted.usedFiles.length} file${extracted.usedFiles.length === 1 ? '' : 's'}; very long content was trimmed to fit the AI context.`
           : undefined,
       });
     } catch (err) {
@@ -200,5 +222,36 @@ router.post(
     }
   }
 );
+
+const exportSchema = z.object({
+  content: z.string().min(1).max(250_000),
+  kind: z.enum(['cv', 'cover_letter', 'freeform']).default('freeform'),
+  format: z.enum(['pdf', 'docx']),
+});
+
+/** Create a formatted, authenticated PDF or Word download from an AI draft. */
+router.post('/export', authenticate, authorizeRole(['admin', 'employee']), aiLimiter, async (req, res, next) => {
+  try {
+    const parsed = exportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid export request' });
+    }
+    const { content, kind, format } = parsed.data;
+    const title = kind === 'cv' ? 'CV — AI Draft' : kind === 'cover_letter' ? 'Cover Letter — AI Draft' : 'Document — AI Draft';
+    const buffer = format === 'pdf' ? await buildPdf(content, title) : await buildDocx(content, title);
+    const filename = `${kind === 'cover_letter' ? 'Cover-Letter' : kind === 'cv' ? 'CV' : 'Document'}-AI-Draft.${format}`;
+    res.set({
+      'Content-Type': format === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+      'Cache-Control': 'private, no-store',
+    });
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

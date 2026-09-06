@@ -33,7 +33,7 @@ Status: Complete
 
 ## 4. Claude AI Studio
 
-Status: Code complete; production secret required
+Status: Complete
 
 - Anthropic Messages API integration is server-side; the key is never returned to the browser.
 - Available Claude models are discovered from Anthropic's Models API and cached for five minutes.
@@ -41,7 +41,12 @@ Status: Code complete; production secret required
 - Admin Employee Detail includes an Allowed Claude Model setting.
 - Employees receive only their assigned model and server-side authorization rejects attempts to request another model.
 - The former OpenAI-compatible integration remains as a backwards-compatible fallback.
-- Production must define `ANTHROPIC_API_KEY` in `/srv/gethired/app/server/.env` and restart `gethired-api`.
+- Production is configured with Claude Sonnet 5, and a live generation returned successfully.
+- AI Studio reads attached PDF, legacy Word (`.doc`), modern Word (`.docx`), TXT and Markdown documents.
+- Stored master documents use the same extraction path, including documents stored in S3.
+- The prompt limit is 50,000 characters; recent conversation history is retained within a bounded 240,000-character context budget.
+- Claude responses can be downloaded as formatted PDF or Word documents as well as plain text.
+- Provider failures return an actionable Claude error instead of an unexplained generic server error.
 
 ## 5. Homepage blog and success-story carousels
 
@@ -54,7 +59,7 @@ Status: Complete
 
 ## Verification performed
 
-- `npm test` in `server`: 7/7 passing.
+- `npm test` in `server`: 26/26 passing.
 - `npx prisma validate`: passing.
 - `npx prisma generate`: passing.
 - `npm run build` in `client`: passing.
@@ -68,12 +73,15 @@ Status: Complete
   - accepted assigned-model generation;
   - rejected employee model escalation (HTTP 403);
   - unrestricted admin model selection.
+  - authenticated PDF and DOCX reference uploads;
+  - prompts longer than the former 6,000-character ceiling;
+  - long-context conversational follow-ups;
+  - formatted PDF and DOCX generation, download and read-back.
 - Temporary database, API and test data were removed after verification.
 
 ## Deployment checklist
 
-1. Add `ANTHROPIC_API_KEY=<secret>` and `MOCK_AI=false` to `/srv/gethired/app/server/.env`.
-2. Merge the PR into `main`.
-3. Confirm the backend workflow applies `prisma migrate deploy` and the `/health` gate passes.
-4. Confirm the frontend deployment completes.
-5. In production, verify AI Studio lists Claude models and completes one short generation as an admin and as a restricted employee.
+1. Merge the PR into `main`.
+2. Confirm the backend workflow installs the document dependencies and the `/health` gate passes.
+3. Confirm the frontend deployment completes.
+4. In production, upload one PDF or Word CV, request a follow-up revision, and download both export formats.

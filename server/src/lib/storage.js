@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env } from '../config/env.js';
+import { extractDocumentText } from './documentText.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
@@ -166,15 +167,13 @@ export async function readFileBuffer(key) {
   }
 }
 
-/** Reads file text for the AI assistant (local driver or seed .txt masters only). */
+/** Reads and extracts a stored master document for the AI assistant. */
 export async function tryReadFileText(key) {
   try {
-    if (env.storageDriver === 's3') return null;
-    const filePath = resolveLocalPath(key);
-    if (!filePath) return null;
-    const ext = path.extname(filePath).toLowerCase();
-    if (!['.txt', '.md'].includes(ext)) return null;
-    return await fs.readFile(filePath, 'utf8');
+    const buffer = await readFileBuffer(key);
+    if (!buffer) return null;
+    const result = await extractDocumentText(buffer, path.basename(key));
+    return result.text;
   } catch {
     return null;
   }

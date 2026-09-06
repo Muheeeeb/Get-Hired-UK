@@ -19,7 +19,12 @@ async function anthropicJson(path, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const err = new Error(data?.error?.message || `Anthropic API request failed (${response.status})`);
-    err.status = response.status === 429 ? 429 : 502;
+    err.status = response.status === 400 || response.status === 429 ? response.status : 502;
+    err.publicMessage = response.status === 429
+      ? 'Claude is temporarily rate-limited. Please wait a moment and try again.'
+      : response.status === 400
+        ? `Claude could not process this request: ${data?.error?.message || 'invalid request'}`
+        : 'Claude is temporarily unavailable. Please try again.';
     throw err;
   }
   return data;
@@ -84,6 +89,23 @@ export function buildClaudeRequest({ model, system, messages, maxTokens }) {
   return { model, system, messages, max_tokens: maxTokens };
 }
 
+export const MAX_AI_SOURCE_CHARS = 180_000;
+
+export function buildDocumentUserContent({
+  prompt, clientName, domainName, masterText, referenceText, isFollowUp = false,
+}) {
+  return (isFollowUp
+    ? [prompt, referenceText ? `Reference material:\n${referenceText.slice(0, MAX_AI_SOURCE_CHARS)}` : '']
+    : [
+        clientName ? `Candidate: ${clientName}` : '',
+        domainName ? `Career domain: ${domainName}` : '',
+        prompt ? `Instructions:\n${prompt}` : '',
+        masterText ? `Master document content:\n${masterText.slice(0, MAX_AI_SOURCE_CHARS)}` : '',
+        referenceText ? `Reference material:\n${referenceText.slice(0, MAX_AI_SOURCE_CHARS)}` : '',
+      ]
+  ).filter(Boolean).join('\n\n');
+}
+
 /**
  * Server-side only drafting. Provider keys never leave this process.
  * When no key is configured and MOCK_AI=true, produces a structured local draft
@@ -109,22 +131,15 @@ export async function generateDocument({
   const isFollowUp = history.length > 0;
   // Context (candidate, master CV) is established on the first turn — later turns
   // only carry the new instruction, so follow-ups stay fast and cheap.
-  const userContent = (isFollowUp
-    ? [prompt, referenceText ? `Reference material:\n${referenceText.slice(0, 6000)}` : '']
-    : [
-        clientName ? `Candidate: ${clientName}` : '',
-        domainName ? `Career domain: ${domainName}` : '',
-        prompt ? `Instructions:\n${prompt}` : '',
-        masterText ? `Master document content:\n${masterText.slice(0, 6000)}` : '',
-        referenceText ? `Reference material:\n${referenceText.slice(0, 6000)}` : '',
-      ]
-  ).filter(Boolean).join('\n\n');
+  const userContent = buildDocumentUserContent({
+    prompt, clientName, domainName, masterText, referenceText, isFollowUp,
+  });
 
   if (env.anthropicApiKey) {
     return generateWithClaude({
       model,
       system,
-      maxTokens: 1500,
+      maxTokens: 3500,
       messages: [
         ...history.map((message) => ({ role: message.role, content: message.content })),
         { role: 'user', content: userContent },
@@ -138,7 +153,7 @@ export async function generateDocument({
     const completion = await openai.chat.completions.create({
       model: env.aiModel,
       temperature: 0.7,
-      max_tokens: 1500,
+      max_tokens: 3500,
       messages: [
         { role: 'system', content: system },
         ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -165,7 +180,7 @@ export async function draftCoverLetter({ clientName, jobTitle, company, domainNa
     `Candidate: ${clientName}`,
     `Applying for: ${jobTitle} at ${company}`,
     domainName ? `Career domain: ${domainName}` : '',
-    masterCvText ? `Master CV content:\n${masterCvText.slice(0, 6000)}` : '',
+    masterCvText ? `Master CV content:\n${masterCvText.slice(0, MAX_AI_SOURCE_CHARS)}` : '',
   ].filter(Boolean).join('\n\n');
 
   if (env.anthropicApiKey) {
