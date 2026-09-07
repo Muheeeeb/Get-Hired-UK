@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
@@ -19,6 +19,7 @@ export default function ClientDetail() {
   const [employees, setEmployees] = useState([]);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const noticeTimer = useRef(null);
 
   const [pkg, setPkg] = useState(null);
   const [domainsDraft, setDomainsDraft] = useState(null);
@@ -57,9 +58,12 @@ export default function ClientDetail() {
     api.get('/admin/package-choices').then((r) => setPackageChoices(r.data.choices)).catch(() => {});
   }, []);
 
-  function flash(msg) {
-    setNotice(msg);
-    setTimeout(() => setNotice(null), 4000);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  function flash(message, tone = 'success') {
+    clearTimeout(noticeTimer.current);
+    setNotice({ message, tone });
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
   }
 
   async function savePackage(e) {
@@ -74,22 +78,22 @@ export default function ClientDetail() {
       await api.put(`/admin/clients/${id}/assign`, {
         employeeId: pkg.assignedEmployeeId || null,
       });
-      flash('Package & assignment saved');
+      flash('Changes have been saved');
       load();
     } catch (err) {
-      flash(errorMessage(err));
+      flash(errorMessage(err), 'error');
     }
   }
 
   async function saveDomains() {
     const domains = domainsDraft.map((d) => d.trim()).filter(Boolean);
-    if (domains.length < 1 || domains.length > 10) return flash('Please provide between 1 and 10 domains');
+    if (domains.length < 1 || domains.length > 10) return flash('Please provide between 1 and 10 domains', 'error');
     try {
       await api.put(`/admin/clients/${id}/domains`, { domains });
       flash('Domains updated');
       load();
     } catch (err) {
-      flash(errorMessage(err));
+      flash(errorMessage(err), 'error');
     }
   }
 
@@ -103,7 +107,7 @@ export default function ClientDetail() {
       );
       await load();
     } catch (err) {
-      flash(errorMessage(err));
+      flash(errorMessage(err), 'error');
     } finally {
       setExtending(false);
     }
@@ -156,7 +160,7 @@ export default function ClientDetail() {
                       await api.delete(`/admin/clients/${id}`);
                       navigate('/admin/clients');
                     } catch (err) {
-                      flash(errorMessage(err));
+                      flash(errorMessage(err), 'error');
                     }
                   }}
                 >
@@ -171,7 +175,21 @@ export default function ClientDetail() {
             </div>
           )}
           {notice && (
-            <div className="mb-6 rounded-xl bg-gold-100 px-4 py-3 text-sm text-navy-800" role="status">{notice}</div>
+            <div
+              className={`fixed right-4 top-4 z-[100] flex max-w-[calc(100vw-2rem)] items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-card-lg sm:right-6 sm:top-6 ${
+                notice.tone === 'error'
+                  ? 'border-danger/20 bg-danger-soft text-danger'
+                  : 'border-success/20 bg-white text-navy-800'
+              }`}
+              role={notice.tone === 'error' ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <span className={`font-bold ${notice.tone === 'error' ? 'text-danger' : 'text-success'}`} aria-hidden="true">
+                {notice.tone === 'error' ? '!' : '✓'}
+              </span>
+              <span className="font-semibold">{notice.message}</span>
+              <button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+            </div>
           )}
 
           <div className="grid gap-4 sm:grid-cols-3">
