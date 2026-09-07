@@ -17,6 +17,7 @@ Status: Complete
 Status: Complete
 
 - Admin Client Detail supports extending a package by 1–24 calendar months and confirms the exact old/new expiry and resulting duration.
+- Admins can directly select both the package start date and end/expiry date; the API rejects an end date earlier than the start date.
 - Application totals are split into anniversary-based package months (Month 1, Month 2, Month 3, and beyond).
 - Expiry dates are inclusive and calendar month-end clamping is handled without drift (for example, 31 January → 28 February → 31 March).
 - Package start, current expiry and total duration are shown alongside the monthly breakdown in client, employee and admin views.

@@ -612,6 +612,7 @@ router.put(
   validate(
     z.object({
       packageType: z.string().min(2).max(80).optional(),
+      packageStartedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       monthlyJobTarget: z.number().int().min(1).max(500).optional(),
     })
@@ -620,11 +621,21 @@ router.put(
     try {
       const profile = await prisma.clientProfile.findUnique({ where: { id: req.params.id } });
       if (!profile) return res.status(404).json({ error: 'Client not found' });
+      const packageStartedAt = req.body.packageStartedAt
+        ? dateOnly(req.body.packageStartedAt)
+        : profile.packageStartedAt;
+      const expiryDate = req.body.expiryDate
+        ? dateOnly(req.body.expiryDate)
+        : profile.expiryDate;
+      if (expiryDate < packageStartedAt) {
+        return res.status(400).json({ error: 'Package end date cannot be before the start date' });
+      }
       const updated = await prisma.clientProfile.update({
         where: { id: profile.id },
         data: {
           ...(req.body.packageType ? { packageType: req.body.packageType } : {}),
-          ...(req.body.expiryDate ? { expiryDate: dateOnly(req.body.expiryDate) } : {}),
+          ...(req.body.packageStartedAt ? { packageStartedAt } : {}),
+          ...(req.body.expiryDate ? { expiryDate } : {}),
           ...(req.body.monthlyJobTarget ? { monthlyJobTarget: req.body.monthlyJobTarget } : {}),
         },
       });

@@ -38,6 +38,7 @@ export default function ClientDetail() {
       setEmployees(e.employees);
       setPkg({
         packageType: d.client.packageType,
+        packageStartedAt: new Date(d.client.packageStartedAt).toISOString().slice(0, 10),
         expiryDate: new Date(d.expiry.expiryDate).toISOString().slice(0, 10),
         monthlyJobTarget: d.client.monthlyJobTarget,
         assignedEmployeeId: d.assignedEmployeeId || '',
@@ -66,6 +67,7 @@ export default function ClientDetail() {
     try {
       await api.put(`/admin/clients/${id}/package`, {
         packageType: pkg.packageType,
+        packageStartedAt: pkg.packageStartedAt,
         expiryDate: pkg.expiryDate,
         monthlyJobTarget: Number(pkg.monthlyJobTarget),
       });
@@ -211,8 +213,12 @@ export default function ClientDetail() {
                   {packageChoices.map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Input id="pkg-expiry" label="Expiry date" type="date" value={pkg.expiryDate}
+                  <Input id="pkg-start" label="Start date" type="date" value={pkg.packageStartedAt}
+                    onChange={(e) => setPkg({ ...pkg, packageStartedAt: e.target.value })} />
+                  <Input id="pkg-expiry" label="End / expiry date" type="date" min={pkg.packageStartedAt} value={pkg.expiryDate}
                     onChange={(e) => setPkg({ ...pkg, expiryDate: e.target.value })} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Input id="pkg-target" label="Monthly target" type="number" min={1} max={500}
                     value={pkg.monthlyJobTarget}
                     onChange={(e) => setPkg({ ...pkg, monthlyJobTarget: e.target.value })} />
