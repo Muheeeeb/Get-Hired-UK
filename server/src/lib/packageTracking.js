@@ -17,10 +17,25 @@ export function addCalendarMonths(value, months) {
   const iso = isoDate(value);
   const source = fromIso(iso);
   const day = source.getUTCDate();
+  const sourceLastDay = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + 1, 0)).getUTCDate();
   const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1));
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(day, lastDay));
+  // Once a package ends on a month's final day, keep subsequent extensions on
+  // the final day too (31 Jan → 28 Feb → 31 Mar), instead of drifting to the 28th.
+  target.setUTCDate(day === sourceLastDay ? lastDay : Math.min(day, lastDay));
   return isoDate(target);
+}
+
+/** Exact before/after values returned by the extension API and shown in the UI. */
+export function buildPackageExtension(profile, months) {
+  const previousExpiryDate = isoDate(profile.expiryDate);
+  const expiryDate = addCalendarMonths(previousExpiryDate, months);
+  const tracking = buildPackageMonths({
+    packageStartedAt: profile.packageStartedAt,
+    expiryDate,
+    monthlyJobTarget: profile.monthlyJobTarget,
+  });
+  return { previousExpiryDate, expiryDate, packageMonths: tracking.totalMonths };
 }
 
 /**

@@ -3,12 +3,21 @@ import { formatDate } from './files';
 
 /** Package-month application totals shared by client, employee and admin views. */
 export function MonthlyApplicationBreakdown({ months = [], className = '' }) {
+  const packageStart = months[0]?.startDate;
+  const packageExpiry = months.at(-1)?.endDate;
   return (
     <Card className={className}>
       <CardHeader
         title="Monthly Application Tracking"
         subtitle="Applications are counted separately from each package-month anniversary"
       />
+      {months.length > 0 && (
+        <div className="grid gap-3 border-b border-ivory-dark px-6 py-4 text-sm sm:grid-cols-3">
+          <div><span className="text-ink-soft">Package started</span><div className="font-semibold text-navy-800">{formatDate(packageStart)}</div></div>
+          <div><span className="text-ink-soft">Current expiry</span><div className="font-semibold text-navy-800">{formatDate(packageExpiry)}</div></div>
+          <div><span className="text-ink-soft">Package duration</span><div className="font-semibold text-navy-800">{months.length} month{months.length === 1 ? '' : 's'}</div></div>
+        </div>
+      )}
       <div className="grid gap-4 p-6 sm:grid-cols-2 xl:grid-cols-4">
         {months.map((period) => (
           <div

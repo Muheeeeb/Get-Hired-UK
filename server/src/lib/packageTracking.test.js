@@ -1,11 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addCalendarMonths, buildPackageMonths } from './packageTracking.js';
+import { addCalendarMonths, buildPackageExtension, buildPackageMonths } from './packageTracking.js';
 
 test('calendar-month extension clamps month ends', () => {
   assert.equal(addCalendarMonths('2027-01-31', 1), '2027-02-28');
   assert.equal(addCalendarMonths('2028-01-31', 1), '2028-02-29');
-  assert.equal(addCalendarMonths('2026-09-30', 3), '2026-12-30');
+  assert.equal(addCalendarMonths('2026-09-30', 3), '2026-12-31');
+});
+
+test('repeated month-end extensions do not drift to the 28th', () => {
+  const february = addCalendarMonths('2027-01-31', 1);
+  assert.equal(february, '2027-02-28');
+  assert.equal(addCalendarMonths(february, 1), '2027-03-31');
+});
+
+test('package extension reports exact old/new dates and resulting duration', () => {
+  const extension = buildPackageExtension({
+    packageStartedAt: '2026-08-31',
+    expiryDate: '2026-09-30',
+    monthlyJobTarget: 40,
+  }, 2);
+  assert.deepEqual(extension, {
+    previousExpiryDate: '2026-09-30',
+    expiryDate: '2026-11-30',
+    packageMonths: 3,
+  });
 });
 
 test('applications are separated into package months without boundary double-counting', () => {

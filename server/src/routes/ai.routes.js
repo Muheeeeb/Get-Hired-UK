@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import multer from 'multer';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
@@ -21,6 +22,8 @@ export const MAX_AI_PROMPT_CHARS = 50_000;
 export const MAX_AI_HISTORY_JSON_CHARS = 800_000;
 const MAX_HISTORY_MESSAGE_CHARS = 60_000;
 const MAX_HISTORY_CONTEXT_CHARS = 240_000;
+export const MAX_SAVED_AI_MESSAGES = 60;
+const MAX_SAVED_AI_CHARS = 500_000;
 
 const refUpload = multer({
   storage: multer.memoryStorage(),
@@ -53,6 +56,46 @@ export function parseConversationHistory(encoded) {
   return kept.reverse();
 }
 
+/** Keep persisted turns safe, bounded and compatible with older stored JSON. */
+export function normalizeSavedMessages(raw) {
+  if (!Array.isArray(raw)) return [];
+  const newestFirst = raw
+    .filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+    .slice(-MAX_SAVED_AI_MESSAGES)
+    .reverse();
+  const kept = [];
+  let used = 0;
+  for (const message of newestFirst) {
+    if (used >= MAX_SAVED_AI_CHARS) break;
+    const content = message.content.slice(0, MAX_SAVED_AI_CHARS - used);
+    if (!content) continue;
+    kept.push({
+      id: typeof message.id === 'string' ? message.id : crypto.randomUUID(),
+      role: message.role,
+      content,
+      ...(typeof message.note === 'string' && message.note ? { note: message.note.slice(0, 2_000) } : {}),
+      ...(Array.isArray(message.files) ? {
+        files: message.files.filter((name) => typeof name === 'string').slice(0, 6).map((name) => name.slice(0, 255)),
+      } : {}),
+    });
+    used += content.length;
+  }
+  return kept.reverse();
+}
+
+function conversationPayload(conversation) {
+  return {
+    id: conversation.id,
+    clientId: conversation.clientId || '',
+    domainId: conversation.domainId || '',
+    kind: conversation.kind,
+    model: conversation.model || '',
+    messages: normalizeSavedMessages(conversation.messages),
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+  };
+}
+
 const schema = z.object({
   clientId: z.string().uuid(),
   domainId: z.string().uuid().optional(),
@@ -69,6 +112,32 @@ async function selectedModel(req, requested) {
     defaultModel: await defaultClaudeModel(),
   });
 }
+
+/** Saved AI Studio tabs are private to the signed-in admin/employee. */
+router.get('/conversations', authenticate, authorizeRole(['admin', 'employee']), async (req, res, next) => {
+  try {
+    const conversations = await prisma.aiStudioConversation.findMany({
+      where: { userId: req.user.id },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+    });
+    res.json({ conversations: conversations.reverse().map(conversationPayload) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/conversations/:id', authenticate, authorizeRole(['admin', 'employee']), async (req, res, next) => {
+  try {
+    const removed = await prisma.aiStudioConversation.deleteMany({
+      where: { id: req.params.id, userId: req.user.id },
+    });
+    if (!removed.count) return res.status(404).json({ error: 'AI conversation not found' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
 
 /** Available Claude models; employees only receive their admin-approved model. */
 router.get('/models', authenticate, authorizeRole(['admin', 'employee']), async (req, res, next) => {
@@ -157,19 +226,35 @@ router.post(
         // Prior turns, JSON-encoded (multipart carries strings only).
         history: z.string().max(MAX_AI_HISTORY_JSON_CHARS).optional().or(z.literal('')),
         model: z.string().regex(/^claude-[a-zA-Z0-9._-]+$/).max(200).optional().or(z.literal('')),
+        conversationId: z.string().uuid().optional().or(z.literal('')),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid request' });
       }
-      const { kind, prompt, clientId, domainId } = parsed.data;
+      const { kind, prompt, clientId, domainId, conversationId } = parsed.data;
       const model = await selectedModel(req, parsed.data.model || undefined);
+
+      let savedConversation = null;
+      if (conversationId) {
+        savedConversation = await prisma.aiStudioConversation.findFirst({
+          where: { id: conversationId, userId: req.user.id },
+        });
+        if (!savedConversation) return res.status(404).json({ error: 'AI conversation not found' });
+      } else {
+        const savedCount = await prisma.aiStudioConversation.count({ where: { userId: req.user.id } });
+        if (savedCount >= 5) {
+          return res.status(409).json({ error: 'You can keep up to five AI conversations. Close one before starting another.' });
+        }
+      }
 
       // Keep only well-formed turns, and only the recent ones so the prompt
       // cannot grow without bound over a long conversation.
       let history = [];
       try {
-        history = parseConversationHistory(parsed.data.history);
+        history = savedConversation
+          ? parseConversationHistory(JSON.stringify(normalizeSavedMessages(savedConversation.messages)))
+          : parseConversationHistory(parsed.data.history);
       } catch {
         return res.status(400).json({ error: 'Invalid conversation history' });
       }
@@ -210,8 +295,34 @@ router.post(
         kind, prompt, clientName, domainName, masterText,
         referenceText: extracted.referenceText, history, model,
       });
+
+      const userMessage = {
+        id: crypto.randomUUID(), role: 'user', content: prompt,
+        files: uploaded.map((file) => file.originalname).slice(0, 6),
+      };
+      const assistantMessage = {
+        id: crypto.randomUUID(), role: 'assistant', content: result.draft,
+        ...(extracted.truncatedFiles.length ? {
+          note: `Read ${extracted.usedFiles.length} file${extracted.usedFiles.length === 1 ? '' : 's'}; very long content was trimmed to fit the AI context.`,
+        } : {}),
+      };
+      const messages = normalizeSavedMessages([
+        ...(savedConversation ? normalizeSavedMessages(savedConversation.messages) : []),
+        userMessage,
+        assistantMessage,
+      ]);
+      const saved = savedConversation
+        ? await prisma.aiStudioConversation.update({
+            where: { id: savedConversation.id },
+            data: { clientId: clientId || null, domainId: domainId || null, kind, model, messages },
+          })
+        : await prisma.aiStudioConversation.create({
+            data: { userId: req.user.id, clientId: clientId || null, domainId: domainId || null, kind, model, messages },
+          });
       res.json({
         ...result,
+        conversationId: saved.id,
+        messages,
         usedFiles: extracted.usedFiles,
         note: extracted.truncatedFiles.length
           ? `Read ${extracted.usedFiles.length} file${extracted.usedFiles.length === 1 ? '' : 's'}; very long content was trimmed to fit the AI context.`

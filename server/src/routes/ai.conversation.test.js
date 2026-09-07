@@ -4,6 +4,8 @@ import {
   default as router,
   MAX_AI_HISTORY_JSON_CHARS,
   MAX_AI_PROMPT_CHARS,
+  MAX_SAVED_AI_MESSAGES,
+  normalizeSavedMessages,
   parseConversationHistory,
 } from './ai.routes.js';
 import { buildDocumentUserContent } from '../lib/ai.js';
@@ -39,9 +41,30 @@ test('conversation history is bounded from the oldest side', () => {
   assert.ok(history.at(-1).content.startsWith('29'));
 });
 
-function roleGate(path) {
-  const layer = router.stack.find((item) => item.route?.path === path && item.route.methods.post);
-  assert.ok(layer, `POST ${path} route exists`);
+test('saved AI conversations retain valid messages and attachment labels across reloads', () => {
+  const messages = normalizeSavedMessages([
+    { id: 'u1', role: 'user', content: 'Use this CV', files: ['candidate.pdf'] },
+    { id: 'a1', role: 'assistant', content: 'Saved draft', note: 'Reference read' },
+    { role: 'system', content: 'must not be persisted' },
+  ]);
+  assert.deepEqual(messages, [
+    { id: 'u1', role: 'user', content: 'Use this CV', files: ['candidate.pdf'] },
+    { id: 'a1', role: 'assistant', content: 'Saved draft', note: 'Reference read' },
+  ]);
+});
+
+test('saved AI conversations are bounded from the oldest side', () => {
+  const messages = normalizeSavedMessages(Array.from({ length: 80 }, (_, index) => ({
+    id: String(index), role: index % 2 ? 'assistant' : 'user', content: `turn-${index}`,
+  })));
+  assert.equal(messages.length, MAX_SAVED_AI_MESSAGES);
+  assert.equal(messages[0].id, '20');
+  assert.equal(messages.at(-1).id, '79');
+});
+
+function roleGate(path, method = 'post') {
+  const layer = router.stack.find((item) => item.route?.path === path && item.route.methods[method]);
+  assert.ok(layer, `${method.toUpperCase()} ${path} route exists`);
   return layer.route.stack[1].handle;
 }
 
@@ -64,6 +87,21 @@ for (const path of ['/generate', '/export']) {
   test(`POST ${path} rejects clients`, () => {
     const res = responseRecorder();
     roleGate(path)({ user: { role: 'client' } }, res, () => {});
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.body, { error: 'Forbidden' });
+  });
+}
+
+for (const [method, path] of [['get', '/conversations'], ['delete', '/conversations/:id']]) {
+  test(`${method.toUpperCase()} ${path} allows employees`, () => {
+    let continued = false;
+    roleGate(path, method)({ user: { role: 'employee' } }, responseRecorder(), () => { continued = true; });
+    assert.equal(continued, true);
+  });
+
+  test(`${method.toUpperCase()} ${path} rejects clients`, () => {
+    const res = responseRecorder();
+    roleGate(path, method)({ user: { role: 'client' } }, res, () => {});
     assert.equal(res.statusCode, 403);
     assert.deepEqual(res.body, { error: 'Forbidden' });
   });

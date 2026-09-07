@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
@@ -19,6 +19,7 @@ export default function ClientDetail() {
   const [employees, setEmployees] = useState([]);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const noticeTimer = useRef(null);
 
   const [pkg, setPkg] = useState(null);
   const [domainsDraft, setDomainsDraft] = useState(null);
@@ -38,6 +39,7 @@ export default function ClientDetail() {
       setEmployees(e.employees);
       setPkg({
         packageType: d.client.packageType,
+        packageStartedAt: new Date(d.client.packageStartedAt).toISOString().slice(0, 10),
         expiryDate: new Date(d.expiry.expiryDate).toISOString().slice(0, 10),
         monthlyJobTarget: d.client.monthlyJobTarget,
         assignedEmployeeId: d.assignedEmployeeId || '',
@@ -56,9 +58,12 @@ export default function ClientDetail() {
     api.get('/admin/package-choices').then((r) => setPackageChoices(r.data.choices)).catch(() => {});
   }, []);
 
-  function flash(msg) {
-    setNotice(msg);
-    setTimeout(() => setNotice(null), 4000);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  function flash(message, tone = 'success') {
+    clearTimeout(noticeTimer.current);
+    setNotice({ message, tone });
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
   }
 
   async function savePackage(e) {
@@ -66,39 +71,43 @@ export default function ClientDetail() {
     try {
       await api.put(`/admin/clients/${id}/package`, {
         packageType: pkg.packageType,
+        packageStartedAt: pkg.packageStartedAt,
         expiryDate: pkg.expiryDate,
         monthlyJobTarget: Number(pkg.monthlyJobTarget),
       });
       await api.put(`/admin/clients/${id}/assign`, {
         employeeId: pkg.assignedEmployeeId || null,
       });
-      flash('Package & assignment saved');
+      flash('Changes have been saved');
       load();
     } catch (err) {
-      flash(errorMessage(err));
+      flash(errorMessage(err), 'error');
     }
   }
 
   async function saveDomains() {
     const domains = domainsDraft.map((d) => d.trim()).filter(Boolean);
-    if (domains.length < 1 || domains.length > 10) return flash('Please provide between 1 and 10 domains');
+    if (domains.length < 1 || domains.length > 10) return flash('Please provide between 1 and 10 domains', 'error');
     try {
       await api.put(`/admin/clients/${id}/domains`, { domains });
       flash('Domains updated');
       load();
     } catch (err) {
-      flash(errorMessage(err));
+      flash(errorMessage(err), 'error');
     }
   }
 
   async function extendPackage() {
     setExtending(true);
     try {
-      await api.post(`/admin/clients/${id}/extend`, { months: Number(extendMonths) });
-      flash(`Package extended by ${extendMonths} month${extendMonths === '1' ? '' : 's'}`);
+      const { data } = await api.post(`/admin/clients/${id}/extend`, { months: Number(extendMonths) });
+      flash(
+        `Package extended: ${formatDate(data.previousExpiryDate)} → ${formatDate(data.expiryDate)} ` +
+        `(${data.packageMonths} package month${data.packageMonths === 1 ? '' : 's'})`,
+      );
       await load();
     } catch (err) {
-      flash(errorMessage(err));
+      flash(errorMessage(err), 'error');
     } finally {
       setExtending(false);
     }
@@ -151,7 +160,7 @@ export default function ClientDetail() {
                       await api.delete(`/admin/clients/${id}`);
                       navigate('/admin/clients');
                     } catch (err) {
-                      flash(errorMessage(err));
+                      flash(errorMessage(err), 'error');
                     }
                   }}
                 >
@@ -166,7 +175,21 @@ export default function ClientDetail() {
             </div>
           )}
           {notice && (
-            <div className="mb-6 rounded-xl bg-gold-100 px-4 py-3 text-sm text-navy-800" role="status">{notice}</div>
+            <div
+              className={`fixed right-4 top-4 z-[100] flex max-w-[calc(100vw-2rem)] items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-card-lg sm:right-6 sm:top-6 ${
+                notice.tone === 'error'
+                  ? 'border-danger/20 bg-danger-soft text-danger'
+                  : 'border-success/20 bg-white text-navy-800'
+              }`}
+              role={notice.tone === 'error' ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <span className={`font-bold ${notice.tone === 'error' ? 'text-danger' : 'text-success'}`} aria-hidden="true">
+                {notice.tone === 'error' ? '!' : '✓'}
+              </span>
+              <span className="font-semibold">{notice.message}</span>
+              <button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+            </div>
           )}
 
           <div className="grid gap-4 sm:grid-cols-3">
@@ -208,8 +231,12 @@ export default function ClientDetail() {
                   {packageChoices.map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Input id="pkg-expiry" label="Expiry date" type="date" value={pkg.expiryDate}
+                  <Input id="pkg-start" label="Start date" type="date" value={pkg.packageStartedAt}
+                    onChange={(e) => setPkg({ ...pkg, packageStartedAt: e.target.value })} />
+                  <Input id="pkg-expiry" label="End / expiry date" type="date" min={pkg.packageStartedAt} value={pkg.expiryDate}
                     onChange={(e) => setPkg({ ...pkg, expiryDate: e.target.value })} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
                   <Input id="pkg-target" label="Monthly target" type="number" min={1} max={500}
                     value={pkg.monthlyJobTarget}
                     onChange={(e) => setPkg({ ...pkg, monthlyJobTarget: e.target.value })} />

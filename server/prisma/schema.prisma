@@ -90,8 +90,30 @@ model User {
   conversationsAssigned Conversation[]    @relation("ConversationAssignee")
   interviewSessionsCreated InterviewSession[] @relation("SessionCreator")
   interviewSessionsAssigned InterviewSession[] @relation("SessionAssignee")
+  aiStudioConversations AiStudioConversation[]
 
   @@map("users")
+}
+
+/// Private AI Studio workspaces. Each admin/employee owns their own saved tabs;
+/// messages are JSON because they are model turns rather than team-chat records.
+model AiStudioConversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  clientId  String?  @map("client_id") @db.Uuid
+  domainId  String?  @map("domain_id") @db.Uuid
+  kind      String   @default("cv")
+  model     String?
+  messages  Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client ClientProfile? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  domain Domain?        @relation(fields: [domainId], references: [id], onDelete: SetNull)
+
+  @@index([userId, updatedAt])
+  @@map("ai_studio_conversations")
 }
 
 model EmailVerificationToken {
@@ -229,6 +251,7 @@ model ClientProfile {
   interviewSessions  InterviewSession[]
   interviewResources InterviewResource[]
   credentials        ClientCredential[]
+  aiStudioConversations AiStudioConversation[]
 
   @@map("client_profiles")
 }
@@ -276,6 +299,7 @@ model Domain {
 
   client          ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   masterDocuments MasterDocument[]
+  aiStudioConversations AiStudioConversation[]
 
   @@map("domains")
 }
