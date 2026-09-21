@@ -223,7 +223,7 @@ The second reviewer's final pass reached the same verdict on the round 2 fixes (
 
 | Finding | Fix |
 |---|---|
-| **The server still accepted `expiryDate`** on `PUT /clients/:id/package`. Making the field read-only moved the problem out of the UI but left it reachable by anyone calling the endpoint — including a stale browser tab running the previous build during the deploy window, which still types into the field and sends it on every save. | The endpoint now refuses `expiryDate` outright, with a message telling the admin to reload and use Package Months. Verified: a stale-tab payload is rejected and the months are untouched; the current UI payload still saves. |
+| **The server still accepted `expiryDate`** on `PUT /clients/:id/package`. Making the field read-only moved the problem out of the UI but left it reachable by anyone calling the endpoint — including a stale browser tab running the previous build during the deploy window, which still types into the field and sends it on every save. | The endpoint now **accepts and ignores** `expiryDate` (logging that it did), rather than honouring it. Rejecting it was the first attempt, but the currently-deployed frontend sends that field on *every* save of that form — including a save that only changes the monthly target — so a hard rejection would have broken the form in production for as long as an older client was live. Ignoring it keeps both frontend generations working while the re-phasing bug stays fixed. Verified live against both payload shapes. |
 | **Orphan cleanup could delete a file a live message still referenced** — reproduced in 3 of 4 long-chat runs against the previous commit, which re-opened the "scanned CV silently vanishes" complaint by a different route. | I could not reproduce it on the current commit across 40 turns or under concurrent turns on one chat — moving the delete to *after* the write (done in the previous commit for a different reason) appears to have been the cause. Rather than rely on that, deletion is now derived from the record that was actually persisted, so a lost update or a retry cannot strip a referenced file. |
 | A reference whose stored file has gone produced **no block at all** — the attachment disappeared from the conversation with no note. | A missing file is now announced in the conversation and in the reply's note, and logged server-side. |
 
@@ -244,6 +244,22 @@ unbounded-and-broken, but the caching promise should not be stated without that 
 - **Item 8 on S3.** The `frame-ancestors` header was verified on the local storage driver. Production uses S3, where the presigned URL is served by S3 and our header code never runs; S3 sends neither `X-Frame-Options` nor `frame-ancestors`, and the presigned URL already carries `Content-Disposition: inline` + the right content type, so the viewer should work. A reviewer added two cases that reasoning does not cover: a CloudFront response-headers policy injecting `X-Frame-Options` (a common hardening default), and Cloudflare R2 via `S3_ENDPOINT` handling `response-content-disposition` differently. Both collapse to one check — open a single PDF attachment through the viewer against the real bucket before calling item 8 done.
 
 - **Retention of AI Studio uploads.** Reference CVs are now stored (they have to be, or a scanned PDF is lost after the first turn). They are deleted when the conversation is closed, when a turn is trimmed out of the saved window, and when the user is hard-deleted — but there is no time-based retention policy. For a UK jobs platform holding candidate CVs that is worth an explicit decision.
+
+## Rollout compatibility
+
+The backend deploys from `main` via GitHub Actions; the frontend deploys separately via Vercel, so
+the two are briefly — or, if a Vercel deploy is blocked, indefinitely — out of step. Both
+combinations were exercised against this build:
+
+| Old frontend call | Result against this backend |
+|---|---|
+| `PUT /admin/clients/:id/package` **with** `expiryDate` | 200 — the field is ignored and logged; the monthly target and package type still save, and the stored months are untouched |
+| `POST /ai/generate` with `clientId` / `domainId` / `kind=cv` | 200 — the removed fields are ignored and the legacy `kind` maps to `cv_cover_letter` |
+| `GET /ai/conversations` | 200 — the dropped `clientId`/`domainId` read as `undefined` in the old UI without erroring |
+| Dashboard, jobs, employees, package-choices | 200 |
+
+So an old frontend against this backend degrades gracefully rather than failing. A new frontend
+requires this backend, which is the correct ordering since the backend deploys first.
 
 ## Deploying
 

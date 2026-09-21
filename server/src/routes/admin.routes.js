@@ -667,14 +667,16 @@ router.put(
     z.object({
       packageType: z.string().min(2).max(80).optional(),
       packageStartedAt: isoDate().optional(),
-      // `expiryDate` is deliberately NOT accepted here. It is the last package
-      // month's end date, owned by the Package Months editor; setting it from
-      // this form re-cut every month boundary onto a new phase and silently
-      // moved logged applications between months. A stale browser tab running
-      // the previous build still sends it, so it is dropped rather than obeyed.
-      expiryDate: z.undefined({
-        invalid_type_error: 'The package end date is set by the last package month. Reload this page and use Package Months to change it.',
-      }).optional(),
+      // `expiryDate` is ACCEPTED AND IGNORED here, not rejected.
+      //
+      // It is the last package month's end date, owned by the Package Months
+      // editor; honouring it from this form re-cut every month boundary onto a
+      // new phase and silently moved logged applications between months. But
+      // the previous frontend sends it on every save — including a save that
+      // only changes the monthly target — so rejecting it would break that
+      // form outright for as long as an older client is live. Dropping it keeps
+      // those clients working while the bug stays fixed.
+      expiryDate: isoDate().optional(),
       monthlyJobTarget: z.number().int().min(1).max(500).optional(),
     })
   ),
@@ -688,6 +690,9 @@ router.put(
       // end later appends whole months; moving it earlier drops the months that
       // fall outside. This runs BEFORE the profile write so a rejected edit
       // leaves nothing behind.
+      if (req.body.expiryDate) {
+        console.warn(`[package] ignored an expiryDate sent to /clients/${req.params.id}/package — the end date is owned by the package months`);
+      }
       if (req.body.packageStartedAt) {
         const saved = await savePackageBoundaries(profile, {
           startDate: req.body.packageStartedAt,
