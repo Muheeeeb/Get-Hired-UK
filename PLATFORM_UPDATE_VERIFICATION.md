@@ -3,13 +3,14 @@
 Eight requested changes, what was built for each, and how it was verified.
 
 Verification ran against a scratch PostgreSQL database with the full migration chain applied,
-the API booted against it, and the UI rendered in headless Chrome. Server suite: **74 tests, 74 passing**.
+the API booted against it, and the UI rendered in headless Chrome. Server suite: **77 tests, 77 passing**.
 
-This branch went through **two rounds** of independent review (requirements conformance, and an
+This branch went through **three rounds** of independent review (requirements conformance, and an
 adversarial audit of the verification claims above). Round 1 found a regression and a set of
 correctness bugs; round 2 re-checked those fixes and found four defects the fixes themselves had
-introduced — including an authorization bypass. **§9 lists every finding across both rounds and
-what was done about it.** Everything in §1–8 was re-verified afterwards.
+introduced — including an authorization bypass; round 3 confirmed all of those closed and found one
+further consequence of the fix for the largest of them. **§9 lists every finding across all three
+rounds and what was done about it.** Everything in §1–8 was re-verified afterwards.
 
 ---
 
@@ -191,6 +192,29 @@ Both reviewers independently found the same blockers. All are fixed and covered 
 | Changing the expiry re-cut every month boundary onto a new phase, silently re-bucketing logged applications, and a round-trip did not restore the original months. | The expiry field on Package & Assignment is now **read-only** — it is the last month's end date, and Package Months owns it. This matches the spec ("the Expiry Date should equal the end date of the last month and update automatically"). |
 | A replayed text-only turn was sent as a bare string where the original was a content block, which may cost the cache hit. | Every replayed turn uses block form, so the prefix is byte-identical either way. |
 | Uploaded CVs were persisted with no cleanup when a conversation was trimmed, or when a user was hard-deleted. | Both paths now reclaim the files. |
+
+### Round 3 — confirmed closed, plus three residuals now fixed
+
+Round 3 could not get past any of the round 2 fixes: five separate bypass attempts against the file
+read were all refused, six different growth paths against the month cap were all capped, and the
+32 MB limit could not be exceeded. Three residuals it raised have been fixed:
+
+| Finding | Fix |
+|---|---|
+| The `ai-refs/<user>/` prefix test was described as one of two independent checks, but it is **not a containment boundary**: `ai-refs/<me>/../../masters/<other>/cv.pdf` starts with the right prefix, and the local driver normalises `..` before its own check. Nothing could reach it today (references from the browser are discarded outright), but it would silently reopen the original hole the moment any future feature accepted a reference from elsewhere. | The key is normalised before the prefix test, and anything resolving outside the folder is refused. Verified against five traversal shapes including `./`, a leading `/` and a doubled slash. |
+| **The budget re-broke the cache it was meant to protect.** Because the history allowance depended on the size of the *current* upload, an older message changed shape from one request to the next — and prompt caching is a prefix match, so the cache went cold from the first changed message. Worse, when a scanned PDF lost its budget the fallback was its extracted text, which is empty, so the document vanished with no note: exactly the failure re-attachment exists to prevent, reintroduced by volume. | The history budget is now **fixed** (not derived from the current turn) and spent **oldest-first** — which also matches how these chats are actually used, one CV attached at the start followed by many job descriptions. Verified across five turns: earlier messages are byte-identical every time, and the first CV stays attached. An attachment that does drop out now says so in the conversation and in the reply's note. |
+| `inGap` reached the dashboard payload but `ApplicationCharts` never read it, so a client sitting in a deliberate gap still saw "0 / 40" and a 0% donut against a month that had not started. | The tile and donut now read "Between package months" and name when the next month starts. |
+
+Two smaller ones: a save that changes only the monthly target no longer deletes and recreates every
+month row, and orphaned reference files are reclaimed *after* the record that replaced them is
+written rather than before.
+
+On the CSP revert, the two reviewers disagreed about the mechanism — one held that `default-src
+'none'` would block Chrome's PDF viewer, the other that it would not — but neither could verify it
+in a headless browser, and both agreed the revert is the right call: the downside of being wrong is
+the headline feature silently broken in production, against no real gain on content that is
+provably inert. The test asserting `INLINE_TYPES` can never serve `html`, `svg`, `js`, `css` or
+`xml` is what actually holds that line, and should not be removed.
 
 **Open — needs a decision from the client, not a code change**
 

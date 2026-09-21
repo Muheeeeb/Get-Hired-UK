@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import multer from 'multer';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
@@ -26,13 +27,14 @@ const MAX_HISTORY_CONTEXT_CHARS = 240_000;
 export const MAX_SAVED_AI_MESSAGES = 60;
 const MAX_SAVED_AI_CHARS = 900_000;
 /**
- * Total raw PDF bytes in one request, across the new turn AND everything
- * replayed from history. A /v1/messages request may not exceed 32 MB and base64
- * inflates by ~33%, so 18 MB raw (~24 MB encoded) leaves headroom for the
- * conversation text. Without a shared ceiling a chat with a file on every turn
- * grows linearly until it can never succeed again.
+ * Raw PDF bytes replayed from earlier turns. Deliberately a FIXED budget rather
+ * than "whatever the current turn leaves spare": if it depended on the size of
+ * this turn's upload, an older message would change shape from one request to
+ * the next, and prompt caching is a prefix match — the cache would go cold at
+ * the first changed message. Combined with the per-turn upload cap in ai.js
+ * (10 MB) this keeps a request under ~24 MB encoded, inside the 32 MB limit.
  */
-export const MAX_REQUEST_PDF_BYTES = 18 * 1024 * 1024;
+export const MAX_HISTORY_PDF_BYTES = 8 * 1024 * 1024;
 
 /**
  * The two document modes the studio offers.
@@ -85,15 +87,27 @@ export function aiRefPrefix(userId) {
  * documents that the file routes would have refused them.
  */
 function ownedRefKey(ref, userId) {
-  return typeof ref.key === 'string' && ref.key.startsWith(aiRefPrefix(userId)) ? ref.key : null;
+  if (typeof ref.key !== 'string' || !ref.key) return null;
+  // Normalise FIRST. `ai-refs/<me>/../../masters/<someone-else>/cv.pdf` starts
+  // with the right prefix but walks straight out of it, and the local driver
+  // normalises before its own containment check — so a bare `startsWith` is not
+  // a boundary. Compare the resolved path instead.
+  const normalised = path.posix.normalize(ref.key);
+  if (normalised.startsWith('..') || normalised.startsWith('/')) return null;
+  return normalised.startsWith(aiRefPrefix(userId)) ? normalised : null;
 }
 
-export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_REQUEST_PDF_BYTES } = {}) {
-  // Newest turns keep their documents; older ones degrade to extracted text once
-  // the budget is spent, so a long chat cannot grow past the API's request limit.
+export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_HISTORY_PDF_BYTES } = {}) {
+  // Oldest turns claim the budget first, on purpose. The usual shape of a chat
+  // is one CV attached at the start followed by many job descriptions, so the
+  // earliest attachment is the one every later draft depends on — and keeping
+  // the front of the conversation stable is also what keeps the cached prefix
+  // valid. Newest-first would drop that CV as soon as the budget filled and
+  // change message 0 from under the cache.
   let budget = maxPdfBytes;
+  const degraded = [];
   const hydrated = [];
-  for (const message of [...history].reverse()) {
+  for (const message of history) {
     const refs = messageRefs(message);
     if (!refs.length) {
       // Block form, not a bare string: a fresh turn is sent as blocks, so
@@ -106,8 +120,10 @@ export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_REQUES
     for (const ref of refs) {
       const key = ownedRefKey(ref, userId);
       const isPdf = String(ref.name || '').toLowerCase().endsWith('.pdf');
-      if (isPdf && key && budget > 0) {
-        const buffer = await readFileBuffer(key).catch(() => null);
+      let overBudget = false;
+
+      if (isPdf && key) {
+        const buffer = budget > 0 ? await readFileBuffer(key).catch(() => null) : null;
         if (buffer && buffer.length <= budget) {
           budget -= buffer.length;
           blocks.push({
@@ -117,18 +133,32 @@ export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_REQUES
           });
           continue;
         }
+        // The file is legitimately this chat's, it just no longer fits.
+        overBudget = Boolean(buffer) || budget <= 0;
       }
-      // No stored file (a pre-upgrade conversation), not a PDF, or out of
-      // budget: fall back to the extracted text, which is all those turns
-      // ever had anyway.
+
       if (ref.text) {
+        // Not a PDF, no stored file (a pre-upgrade conversation), or out of
+        // budget: the extracted text is all those turns ever had anyway.
         blocks.push({ type: 'text', text: `<document name="${ref.name || 'document'}">\n${ref.text}\n</document>` });
+      } else if (overBudget) {
+        // A scanned PDF with nothing extractable, pushed out by the budget.
+        // Say so in the conversation rather than letting it disappear — that is
+        // exactly the failure re-attachment exists to prevent.
+        degraded.push(ref.name);
+        blocks.push({
+          type: 'text',
+          text: `<document name="${ref.name || 'document'}">(This attachment is no longer included — the conversation has too many attached files. Re-upload it if it is still needed.)</document>`,
+        });
       }
+      // An unreadable or non-owned key contributes nothing at all: it was never
+      // legitimately part of this conversation.
     }
     blocks.push({ type: 'text', text: message.content });
     hydrated.push({ role: message.role, content: blocks });
   }
-  return hydrated.reverse();
+  hydrated.degraded = degraded;
+  return hydrated;
 }
 
 export function parseConversationHistory(encoded) {
@@ -426,12 +456,8 @@ router.post(
         return res.status(err.status || 400).json({ error: err.publicMessage || 'A reference file could not be read' });
       }
 
-      // The new turn's attachments have first claim on the request's PDF budget;
-      // history is re-attached with whatever is left, oldest degrading to text.
-      const freshPdfBytes = extracted.attachments.reduce((sum, file) => sum + (file.pdf?.length || 0), 0);
-      history = await hydrateHistory(history, req.user.id, {
-        maxPdfBytes: Math.max(0, MAX_REQUEST_PDF_BYTES - freshPdfBytes),
-      });
+      history = await hydrateHistory(history, req.user.id);
+      const degradedRefs = history.degraded || [];
 
       const result = await generateDocument({
         prompt,
@@ -479,6 +505,9 @@ router.post(
       if (skipped.length) {
         noteParts.push(`Could not read ${skipped.join(', ')} — too large to send and no extractable text (a scanned PDF needs OCR first).`);
       }
+      if (degradedRefs.length) {
+        noteParts.push(`${degradedRefs.join(', ')} could no longer be included — this chat has too many attached files. Start a new chat, or re-upload what is still needed.`);
+      }
       const note = noteParts.join(' ') || undefined;
 
       const assistantMessage = {
@@ -490,12 +519,13 @@ router.post(
 
       // Turns trimmed out of the saved window take their stored files with them,
       // otherwise every long chat leaks blobs that nothing can ever reference.
+      // Deleted after the write below, never before — a failed save must not
+      // leave the surviving record pointing at files that are already gone.
       const keptKeys = new Set(messages.flatMap((m) => messageRefs(m)).map((ref) => ref.key).filter(Boolean));
       const droppedKeys = previousMessages
         .flatMap((m) => messageRefs(m))
         .map((ref) => ref.key)
         .filter((key) => key && !keptKeys.has(key));
-      await Promise.all(droppedKeys.map((key) => deleteFile(key)));
       const saved = savedConversation
         ? await prisma.aiStudioConversation.update({
             where: { id: savedConversation.id },
@@ -508,6 +538,8 @@ router.post(
         : await prisma.aiStudioConversation.create({
             data: { userId: req.user.id, kind, model, messages, systemPrompt: masterPrompt || null },
           });
+      await Promise.all(droppedKeys.map((key) => deleteFile(key)));
+
       res.json({
         draft: result.draft,
         source: result.source,

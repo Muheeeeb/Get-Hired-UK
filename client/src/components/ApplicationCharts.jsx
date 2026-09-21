@@ -50,6 +50,10 @@ export function ApplicationCharts({ stats, months = [], className = '' }) {
 
   const current = stats.currentMonth;
   const next = stats.nextMonth;
+  // Today falls in a deliberate gap between two package months. Nothing logged
+  // now counts towards a target, so presenting the next month as if it were
+  // running would be a misleading zero.
+  const inGap = Boolean(stats.inGap);
   const target = stats.target || 0;
   const applied = current?.applications || 0;
   const remaining = Math.max(0, target - applied);
@@ -77,9 +81,13 @@ export function ApplicationCharts({ stats, months = [], className = '' }) {
             (Europe/London), which the browser's clock may disagree with. */}
         <Tile label="Applied today" value={stats.today} tone="gold" sub="Across this client's package" />
         <Tile
-          label={`This month (${current?.label || 'Month 1'})`}
-          value={`${applied} / ${target}`}
-          sub={current ? `${formatDate(current.startDate)} – ${formatDate(current.endDate)}` : null}
+          label={inGap ? 'Between package months' : `This month (${current?.label || 'Month 1'})`}
+          value={inGap ? '—' : `${applied} / ${target}`}
+          sub={current
+            ? (inGap
+                ? `${current.label} starts ${formatDate(current.startDate)}`
+                : `${formatDate(current.startDate)} – ${formatDate(current.endDate)}`)
+            : null}
         />
         <Tile
           label={`Next month${next ? ` (${next.label})` : ''}`}
@@ -94,10 +102,12 @@ export function ApplicationCharts({ stats, months = [], className = '' }) {
         {/* Part-to-whole: this package month against its target. */}
         <figure className="min-w-0">
           <figcaption className="mb-1 font-semibold text-navy-800">
-            {current?.label || 'This month'} vs target
+            {inGap ? 'Next month vs target' : `${current?.label || 'This month'} vs target`}
           </figcaption>
           <p className="mb-3 text-xs text-ink-soft">
-            {current ? `${formatDate(current.startDate)} – ${formatDate(current.endDate)}` : null}
+            {inGap
+              ? `The package is between months — ${current?.label} starts ${formatDate(current?.startDate)}`
+              : (current ? `${formatDate(current.startDate)} – ${formatDate(current.endDate)}` : null)}
           </p>
           <div className="relative h-56">
             <ResponsiveContainer width="100%" height="100%">

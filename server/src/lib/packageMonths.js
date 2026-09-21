@@ -199,6 +199,13 @@ export async function savePackageMonths(profile, ranges) {
 export async function savePackageBoundaries(profile, { startDate, expiryDate }) {
   return withClientLock(profile.id, async (tx) => {
     const existing = await ensureRanges(profile, tx);
+    // The package form submits both dates on every save, including one that only
+    // changed the monthly target. Nothing to do if neither date actually moved —
+    // otherwise every row is deleted and recreated for no reason.
+    const unchanged = (!startDate || startDate === existing[0].startDate)
+      && (!expiryDate || expiryDate === existing[existing.length - 1].endDate);
+    if (unchanged) return { rows: await listPackageMonths(profile.id, tx), packageMonths: existing.length };
+
     const shaped = applyPackageBoundaries(existing, { startDate, expiryDate });
     if (shaped.error) return { error: shaped.error };
     const problem = validateMonthRanges(shaped.ranges);

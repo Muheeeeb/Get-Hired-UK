@@ -20,7 +20,7 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
  * the budget still reaches Claude — as its extracted text rather than natively.
  */
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
-const MAX_PDF_BYTES_PER_TURN = 18 * 1024 * 1024;
+const MAX_PDF_BYTES_PER_TURN = 10 * 1024 * 1024;
 let modelCache = null;
 
 function anthropicHeaders() {

@@ -62,7 +62,7 @@ test('oversized PDFs fall back to extracted text instead of blowing the 32MB req
 });
 
 test('the per-turn PDF budget is spent in order, later PDFs degrade to text', () => {
-  const big = Buffer.alloc(7 * 1024 * 1024, 0x41);
+  const big = Buffer.alloc(4 * 1024 * 1024, 0x41);
   const blocks = buildAttachmentBlocks([
     { name: 'a.pdf', pdf: big, text: 'A' },
     { name: 'b.pdf', pdf: big, text: 'B' },
@@ -75,7 +75,7 @@ test('the per-turn PDF budget is spent in order, later PDFs degrade to text', ()
 
 test('a file that can be neither sent natively nor extracted is reported, not dropped', () => {
   // A big scanned PDF: past the per-turn budget and with no extractable text.
-  const big = Buffer.alloc(7 * 1024 * 1024, 0x41);
+  const big = Buffer.alloc(4 * 1024 * 1024, 0x41);
   const blocks = buildAttachmentBlocks([
     { name: 'a.pdf', pdf: big, text: 'A' },
     { name: 'b.pdf', pdf: big, text: 'B' },

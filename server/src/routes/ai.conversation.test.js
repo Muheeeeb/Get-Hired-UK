@@ -170,3 +170,54 @@ for (const [method, path] of [['get', '/conversations'], ['delete', '/conversati
     assert.deepEqual(res.body, { error: 'Forbidden' });
   });
 }
+
+test('a reference key cannot traverse out of the user\'s own folder', async () => {
+  // A bare startsWith is not a containment boundary: the local storage driver
+  // normalises `..` before its own check, so `ai-refs/<me>/../../masters/...`
+  // would resolve to another client's document.
+  for (const key of [
+    'ai-refs/user-1/../../masters/other-client/abc-cv.pdf',
+    'ai-refs/user-1/./../../masters/other-client/abc-cv.pdf',
+    '/ai-refs/user-1/abc.pdf',
+    'ai-refs//user-1/../../masters/other-client/abc-cv.pdf',
+  ]) {
+    const [turn] = await hydrateHistory(
+      [{ role: 'user', content: 'go', refs: [{ name: 'x.pdf', text: '', key }] }],
+      'user-1',
+    );
+    assert.deepEqual(turn.content, [{ type: 'text', text: 'go' }], `${key} must not be opened`);
+  }
+});
+
+test('replaying history does not change earlier turns as the chat grows', async () => {
+  // Prompt caching is a prefix match, so a turn that renders differently on the
+  // next request costs the cache from that point on. The budget is therefore
+  // fixed and spent oldest-first, rather than depending on the current turn.
+  const turnAt = (n) => Array.from({ length: n }, (_, i) => ({
+    role: 'user', content: `turn ${i}`,
+    refs: [{ name: `cv${i}.pdf`, text: `CV ${i} TEXT`, key: `ai-refs/user-1/k${i}-cv${i}.pdf` }],
+  }));
+
+  const three = await hydrateHistory(turnAt(3), 'user-1');
+  const five = await hydrateHistory(turnAt(5), 'user-1');
+  for (let i = 0; i < three.length; i += 1) {
+    assert.deepEqual(five[i], three[i], `message ${i} must render identically as the chat grows`);
+  }
+});
+
+test('an attachment pushed out by the budget is reported, never silently dropped', async () => {
+  const withText = await hydrateHistory([
+    { role: 'user', content: 'go', refs: [{ name: 'cv.pdf', text: 'EXTRACTED', key: 'ai-refs/user-1/a-cv.pdf' }] },
+  ], 'user-1', { maxPdfBytes: 0 });
+  // Text is still available, so the turn degrades quietly to it.
+  assert.match(withText[0].content[0].text, /EXTRACTED/);
+  assert.deepEqual(withText.degraded, []);
+
+  const scanned = await hydrateHistory([
+    { role: 'user', content: 'go', refs: [{ name: 'scan.pdf', text: '', key: 'ai-refs/user-1/a-scan.pdf' }] },
+  ], 'user-1', { maxPdfBytes: 0 });
+  // Nothing extractable: the conversation must say the file is gone rather than
+  // leave every later draft silently written without it.
+  assert.deepEqual(scanned.degraded, ['scan.pdf']);
+  assert.match(scanned[0].content[0].text, /no longer included/);
+});
