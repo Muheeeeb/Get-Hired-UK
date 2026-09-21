@@ -7,6 +7,7 @@ import { formatDate } from '../../components/files';
 
 const EMPTY_FORM = {
   fullName: '', email: '', password: '', packageType: 'Platinum — 80+ jobs/week',
+  packageStartedAt: new Date().toISOString().slice(0, 10),
   expiryDate: '', monthlyJobTarget: 40, assignedEmployeeId: '', domains: ['', '', ''],
 };
 
@@ -54,6 +55,7 @@ export default function AdminClients() {
         email: form.email,
         password: form.password,
         packageType: form.packageType,
+        packageStartedAt: form.packageStartedAt,
         expiryDate: form.expiryDate,
         monthlyJobTarget: Number(form.monthlyJobTarget),
         ...(form.assignedEmployeeId ? { assignedEmployeeId: form.assignedEmployeeId } : {}),
@@ -143,7 +145,10 @@ export default function AdminClients() {
                   .filter(Boolean).map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>
-            <Input id="c-expiry" label="Expiry date" type="date" required value={form.expiryDate}
+            <Input id="c-start" label="Start date (Month 1)" type="date" required value={form.packageStartedAt}
+              onChange={(e) => setForm({ ...form, packageStartedAt: e.target.value })} />
+            <Input id="c-expiry" label="Expiry date" type="date" required min={form.packageStartedAt}
+              value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             <Input id="c-target" label="Monthly job target" type="number" min={1} max={500} required
               value={form.monthlyJobTarget}

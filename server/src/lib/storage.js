@@ -86,6 +86,14 @@ async function s3Save(key, buffer, contentType) {
   );
 }
 
+/**
+ * Types served inline (rendered in the document viewer) rather than downloaded.
+ *
+ * Deliberately inert: no text/html, no image/svg+xml, nothing that can execute
+ * script. Inline responses are served from the API's own origin, so an active
+ * content type here would be same-origin script served on behalf of whoever
+ * uploaded the file. Do not add one.
+ */
 const INLINE_TYPES = {
   '.pdf': 'application/pdf',
   '.txt': 'text/plain; charset=utf-8',

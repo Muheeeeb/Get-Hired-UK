@@ -1,12 +1,12 @@
 import { Badge, EmptyState } from './ui';
-import { DownloadButton, formatDate } from './files';
+import { DeleteFileButton, DownloadButton, formatDate } from './files';
 
 /**
  * Job applications table.
  * For clients: Company · Job Title · Date · URL only. No tailored-file column —
  * the API never sends tailored docs to a client either.
  */
-export function JobTable({ jobs, showTailored = false, onDelete }) {
+export function JobTable({ jobs, showTailored = false, onDelete, onDocumentDeleted }) {
   if (!jobs.length) {
     return (
       <EmptyState
@@ -44,7 +44,8 @@ export function JobTable({ jobs, showTailored = false, onDelete }) {
                   href={job.jobUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gold-600 font-semibold hover:underline"
+                  title={job.jobUrl}
+                  className="whitespace-nowrap font-semibold text-gold-600 hover:underline"
                 >
                   View posting ↗
                 </a>
@@ -52,13 +53,23 @@ export function JobTable({ jobs, showTailored = false, onDelete }) {
               {showTailored && (
                 <td className="px-4 py-3.5">
                   {job.tailoredDocuments?.length ? (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {job.tailoredDocuments.map((doc) => (
-                        <DownloadButton
-                          key={doc.id}
-                          docId={doc.id}
-                          label={doc.type === 'tailored_cv' ? 'CV' : 'Cover letter'}
-                        />
+                        <span key={doc.id} className="inline-flex items-center gap-0.5 rounded-lg bg-ivory/70 pr-0.5">
+                          <DownloadButton
+                            docId={doc.id}
+                            fileName={doc.fileName}
+                            label={doc.type === 'tailored_cv' ? 'CV' : 'Cover letter'}
+                          />
+                          {onDocumentDeleted && (
+                            <DeleteFileButton
+                              endpoint={`/jobs/tailored-docs/${doc.id}`}
+                              label={`the ${doc.type === 'tailored_cv' ? 'tailored CV' : 'tailored cover letter'} for ${job.company}`}
+                              onDeleted={onDocumentDeleted}
+                              className="!px-1.5"
+                            />
+                          )}
+                        </span>
                       ))}
                     </div>
                   ) : (

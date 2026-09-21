@@ -104,6 +104,10 @@ model AiStudioConversation {
   domainId  String?  @map("domain_id") @db.Uuid
   kind      String   @default("cv")
   model     String?
+  // Snapshot of the admin master prompt taken when this chat was opened, so a
+  // later edit to the setting never rewrites an in-flight conversation (and the
+  // cached prompt prefix stays byte-stable for the whole chat).
+  systemPrompt String? @map("system_prompt")
   messages  Json     @default("[]")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -246,6 +250,7 @@ model ClientProfile {
   user             User             @relation("ClientUser", fields: [userId], references: [id])
   assignedEmployee User?            @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
   domains            Domain[]
+  packageMonths      PackageMonth[]
   jobApplications    JobApplication[]
   dailyPulseLogs     DailyPulseLog[]
   interviewSessions  InterviewSession[]
@@ -254,6 +259,42 @@ model ClientProfile {
   aiStudioConversations AiStudioConversation[]
 
   @@map("client_profiles")
+}
+
+/// One tracked month of a client's package (Month 1, Month 2, …).
+///
+/// The dates are STORED rather than derived so an admin can correct them at any
+/// time — including Month 1 while the client is on Month 3 — and so an extension
+/// creates a real, editable period instead of only bumping a counter. Months are
+/// allowed to have gaps between them (a client who pauses and resumes) but never
+/// to overlap; job applications belong to the month whose range contains their
+/// application date. `client_profiles.package_started_at` mirrors Month 1's start
+/// and `client_profiles.expiry_date` mirrors the last month's end.
+model PackageMonth {
+  id         String   @id @default(uuid()) @db.Uuid
+  clientId   String   @map("client_id") @db.Uuid
+  monthIndex Int      @map("month_index")
+  startDate  DateTime @map("start_date") @db.Date
+  endDate    DateTime @map("end_date") @db.Date
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  client ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, monthIndex])
+  @@index([clientId, startDate])
+  @@map("package_months")
+}
+
+/// Small singleton settings edited from the admin console (currently the AI
+/// Studio master prompt). One row per key so adding a setting needs no migration.
+model AppSetting {
+  key         String   @id
+  value       String
+  updatedById String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
 }
 
 /// A client's login for one job board, so the team can apply as them.

@@ -10,8 +10,25 @@ export function todayISO() {
   }).format(new Date());
 }
 
+/**
+ * True only for a real calendar date in YYYY-MM-DD form.
+ *
+ * A `/^\d{4}-\d{2}-\d{2}$/` regex happily accepts 2026-02-30, and `new Date()`
+ * then rolls it forward to 2 March. Silently moving a package month's end date
+ * two days is how two months end up overlapping, so every date that reaches the
+ * database is round-tripped through this first.
+ */
+export function isValidIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 /** Date object at UTC midnight for a YYYY-MM-DD string (matches @db.Date columns). */
 export function dateOnly(iso) {
+  if (!isValidIsoDate(iso)) {
+    throw Object.assign(new Error(`Not a valid calendar date: ${iso}`), { status: 400 });
+  }
   return new Date(`${iso}T00:00:00.000Z`);
 }
 

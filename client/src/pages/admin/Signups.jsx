@@ -17,6 +17,7 @@ const STATUS = {
 
 const emptyApprove = {
   packageType: 'Gold',
+  packageStartedAt: new Date().toISOString().slice(0, 10),
   expiryDate: '',
   monthlyJobTarget: 30,
   assignedEmployeeId: '',
@@ -71,6 +72,7 @@ export default function AdminSignups() {
     try {
       await api.put(`/admin/signups/${approving.id}/approve`, {
         ...(form.packageType ? { packageType: form.packageType } : {}),
+        ...(form.packageStartedAt ? { packageStartedAt: form.packageStartedAt } : {}),
         ...(form.expiryDate ? { expiryDate: form.expiryDate } : {}),
         ...(form.monthlyJobTarget ? { monthlyJobTarget: Number(form.monthlyJobTarget) } : {}),
         ...(form.assignedEmployeeId ? { assignedEmployeeId: form.assignedEmployeeId } : {}),
@@ -167,7 +169,10 @@ export default function AdminSignups() {
               {(!form.packageType || packageChoices.includes(form.packageType) ? packageChoices : [form.packageType, ...packageChoices])
                 .filter(Boolean).map((c) => <option key={c} value={c}>{c}</option>)}
             </Select>
-            <Input id="a-expiry" label="Expiry date (optional)" type="date" value={form.expiryDate}
+            <Input id="a-start" label="Start date (Month 1)" type="date" value={form.packageStartedAt}
+              onChange={(e) => setForm({ ...form, packageStartedAt: e.target.value })} />
+            <Input id="a-expiry" label="Expiry date (optional)" type="date" min={form.packageStartedAt}
+              value={form.expiryDate}
               onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             <Input id="a-target" label="Monthly target (optional)" type="number" min={1} max={2000}
               value={form.monthlyJobTarget} onChange={(e) => setForm({ ...form, monthlyJobTarget: e.target.value })} />

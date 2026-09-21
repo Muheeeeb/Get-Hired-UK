@@ -47,7 +47,10 @@ export function PasswordInput({ label, error, id, className = '', ...props }) {
 export function Card({ children, className = '', ...props }) {
   return (
     <div
-      className={`rounded-2xl bg-white shadow-card border border-ivory-dark ${className}`}
+      // `min-w-0` lets a card shrink below its content inside a grid or flex
+      // parent, which is what keeps long text inside the card instead of
+      // pushing its container wider than the page.
+      className={`min-w-0 rounded-2xl bg-white shadow-card border border-ivory-dark ${className}`}
       {...props}
     >
       {children}
@@ -58,11 +61,11 @@ export function Card({ children, className = '', ...props }) {
 export function CardHeader({ title, subtitle, action }) {
   return (
     <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-gold-500/15">
-      <div>
+      <div className="min-w-0">
         <h2 className="font-display text-lg text-navy-800">{title}</h2>
         {subtitle && <p className="mt-0.5 text-sm text-ink-soft">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

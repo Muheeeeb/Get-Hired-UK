@@ -6,6 +6,7 @@ import Signup from './pages/Signup';
 import VerifyEmail from './pages/VerifyEmail';
 import Chat from './pages/Chat';
 import Team from './pages/admin/Team';
+import AISettings from './pages/admin/AISettings';
 import EmployeeDetail from './pages/admin/EmployeeDetail';
 import AIStudio from './pages/employee/AIStudio';
 import ForgotPassword from './pages/ForgotPassword';
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/admin/leads" element={<Protected roles={['admin']}><AdminLeads /></Protected>} />
           <Route path="/admin/subscribers" element={<Protected roles={['admin']}><AdminSubscribers /></Protected>} />
           <Route path="/admin/team" element={<Protected roles={['admin']}><Team /></Protected>} />
+          <Route path="/admin/ai-settings" element={<Protected roles={['admin']}><AISettings /></Protected>} />
           <Route path="/admin/chat" element={<Protected roles={['admin']}><Chat /></Protected>} />
           <Route path="/admin/employees/:id" element={<Protected roles={['admin']}><EmployeeDetail /></Protected>} />
           <Route path="/admin/signups" element={<Protected roles={['admin']}><AdminSignups /></Protected>} />

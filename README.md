@@ -107,7 +107,10 @@ Any Node host works (Elastic Beanstalk, App Runner, ECS, or a plain EC2 + PM2):
 - `NODE_ENV=production` (secure cookies, no stack traces in responses).
 - `STORAGE_DRIVER=s3` + AWS/R2 credentials (files never live on the app host).
 - SMTP credentials for the Daily Pulse (`SMTP_HOST` etc.); it logs to console when unset.
-- `ANTHROPIC_API_KEY` for Claude AI Studio; optionally set `ANTHROPIC_MODEL`, and set `MOCK_AI=false`.
+- `ANTHROPIC_API_KEY` for Claude AI Studio; optionally set `ANTHROPIC_MODEL` (blank = Claude Sonnet,
+  matching Pro/Max), and set `MOCK_AI=false`. Changing `ANTHROPIC_MODEL` invalidates cached prompts.
+- `CLIENT_ORIGIN` must list the portal's exact origin(s): it is also what the API allows to embed a
+  PDF in the in-app document viewer (`frame-ancestors`).
 - Serve the client (`npm run build` → `dist/`) behind the same origin or set
   `CLIENT_ORIGIN` for CORS; run the API behind TLS with `trust proxy` (already set).
 - `npx prisma migrate deploy` on release; never `migrate dev` in production.
@@ -115,9 +118,24 @@ Any Node host works (Elastic Beanstalk, App Runner, ECS, or a plain EC2 + PM2):
 ## Key features
 
 - **Momentum Meter** — animated gold progress ring plus separate Month 1/2/3 package tracking.
+- **Per-month package dates** — every package month stores its own editable start and end date
+  (`package_months`). Month 1 can be corrected while the client is on Month 3, an extension creates a
+  real dated month, an extension added by mistake can be deleted, and the logged-job count for each
+  month is recalculated from the new ranges. Gaps between months are allowed; overlaps are rejected.
+- **Application charts** — a donut (this package month vs target) and a bar chart (applications per
+  package month) on the client, employee and admin views, all derived from the stored month dates.
 - **LinkedIn Tracker** — Not Started → In Progress → Complete stepper.
 - **Interview Prep Hub** — downloadable guides + coach tips.
-- **✨ Claude AI Studio** — PDF/Word/TXT/Markdown CV ingestion, conversational drafting with long-context follow-ups, formatted PDF/DOCX export, live Anthropic model discovery, admin model choice, and per-employee model restrictions (the key never leaves the server).
+- **✨ Claude AI Studio** — two modes: *CV & Cover Letter* and *Freeform*. PDFs go to Claude as native
+  document blocks (the same path claude.ai uses), Word/TXT/Markdown are extracted. No hand-written
+  system prompt is sent, so output matches what the team gets from Claude Pro/Max; formatted PDF/DOCX
+  export, live Anthropic model discovery, admin model choice and per-employee model restrictions (the
+  key never leaves the server).
+- **AI master prompt** — the Admin Lead saves one prompt under **Admin → AI Settings**
+  (`app_settings.ai_master_prompt`, lead-only, server enforced). It runs once, invisibly, as the system
+  prompt of every new *CV & Cover Letter* chat, and is cached with a **1-hour TTL** so job descriptions
+  arriving 30 minutes to 2 hours apart each cost only what they add. A chat snapshots the prompt when
+  it opens, so editing the setting never rewrites a conversation in flight.
 - **Daily Pulse** — nightly branded email per client ("We applied for X jobs today!"), idempotent via `daily_pulse_log`.
 - **Admin Leaderboard** — jobs per employee (today/week/month) vs prorated targets, green/amber/red.
 - **Expiry Alert** — dashboards turn amber ≤ 7 days before expiry with a Renew CTA (days computed server-side).
