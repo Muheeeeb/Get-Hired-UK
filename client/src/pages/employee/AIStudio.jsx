@@ -3,10 +3,15 @@ import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Button, Card, CardHeader, Select, Spinner } from '../../components/ui';
 
+/**
+ * Two modes only.
+ * "CV & Cover Letter" silently runs the admin's saved master prompt once when the
+ * chat starts, so the specialist just pastes job descriptions and gets a CV plus
+ * a cover letter back for each one. "Freeform" is a plain Claude chat.
+ */
 const KINDS = [
-  { key: 'cv', label: 'CV' },
-  { key: 'cover_letter', label: 'Cover letter' },
-  { key: 'freeform', label: 'Freeform' },
+  { key: 'cv_cover_letter', label: 'CV & Cover Letter', hint: 'Paste a job description — get a tailored CV and cover letter' },
+  { key: 'freeform', label: 'Freeform', hint: 'An open chat with Claude' },
 ];
 
 const MAX_TABS = 5;
@@ -19,10 +24,10 @@ const uid = () => `m${++seq}`;
 function newSession(n) {
   return {
     id: `draft-${n}`, conversationId: null, n,
-    clientId: '', domainId: '', kind: 'cv',
+    kind: 'cv_cover_letter',
     model: '',
     messages: [], input: '', files: [],
-    busy: false, error: null, saveBusyId: null, savedId: null, exportBusyId: null,
+    busy: false, error: null, exportBusyId: null,
   };
 }
 
@@ -45,17 +50,17 @@ function MessageText({ text }) {
  * follow-ups like "make it shorter" refine the previous draft.
  */
 export default function AIStudio() {
-  const [clients, setClients] = useState([]);
   const idRef = useRef(1);
   const [sessions, setSessions] = useState(() => [newSession(1)]);
-  const [modelConfig, setModelConfig] = useState({ models: [], selectedModel: '', canChoose: false, configured: true });
+  const [modelConfig, setModelConfig] = useState({
+    models: [], selectedModel: '', canChoose: false, configured: true, masterPromptReady: true,
+  });
   const [activeId, setActiveId] = useState('draft-1');
   const [restoring, setRestoring] = useState(true);
   const endRef = useRef(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
-    api.get('/employee/clients').then((r) => setClients(r.data.clients)).catch(() => {});
     api.get('/ai/models').then((r) => {
       const config = r.data;
       setModelConfig(config);
@@ -75,8 +80,7 @@ export default function AIStudio() {
         ...conversation,
         conversationId: conversation.id,
         n: index + 1,
-        input: '', files: [], busy: false, error: null,
-        saveBusyId: null, savedId: null, exportBusyId: null,
+        input: '', files: [], busy: false, error: null, exportBusyId: null,
       }));
       idRef.current = restored.length;
       setSessions(restored);
@@ -85,7 +89,9 @@ export default function AIStudio() {
   }, []);
 
   const active = sessions.find((s) => s.id === activeId) || sessions[0];
-  const activeClient = clients.find((c) => c.id === active.clientId);
+  // The master prompt runs once, at the start of a chat — after the first turn
+  // the mode is fixed, exactly as it is in a real Claude conversation.
+  const kindLocked = active.messages.length > 0;
 
   // Patch by id (never "the active one") so a reply still lands in its own tab
   // if the user switches tabs while it is generating.
@@ -124,8 +130,7 @@ export default function AIStudio() {
   }
 
   function tabTitle(s) {
-    const c = clients.find((x) => x.id === s.clientId);
-    return c ? c.fullName : `Chat ${s.n}`;
+    return `Chat ${s.n}`;
   }
 
   function addFiles(list) {
@@ -145,14 +150,12 @@ export default function AIStudio() {
     const history = s.messages.map((m) => ({ role: m.role, content: m.content }));
     const userMsg = { id: uid(), role: 'user', content: text, files: outgoing.map((f) => f.name) };
 
-    patch(s.id, { messages: [...s.messages, userMsg], input: '', files: [], busy: true, error: null, savedId: null });
+    patch(s.id, { messages: [...s.messages, userMsg], input: '', files: [], busy: true, error: null });
 
     try {
       const fd = new FormData();
       fd.append('kind', s.kind);
       fd.append('prompt', text);
-      if (s.clientId) fd.append('clientId', s.clientId);
-      if (s.domainId) fd.append('domainId', s.domainId);
       fd.append('history', JSON.stringify(history));
       if (s.model) fd.append('model', s.model);
       if (s.conversationId) fd.append('conversationId', s.conversationId);
@@ -188,7 +191,7 @@ export default function AIStudio() {
   }
 
   function downloadTxt(msg) {
-    const label = active.kind === 'cv' ? 'CV' : active.kind === 'cover_letter' ? 'Cover Letter' : 'Document';
+    const label = active.kind === 'cv_cover_letter' ? 'CV and Cover Letter' : 'Document';
     triggerDownload(new Blob([msg.content], { type: 'text/plain' }), `${label} — AI draft.txt`);
   }
 
@@ -202,7 +205,7 @@ export default function AIStudio() {
         kind: s.kind,
         format,
       }, { responseType: 'blob' });
-      const label = s.kind === 'cv' ? 'CV' : s.kind === 'cover_letter' ? 'Cover-Letter' : 'Document';
+      const label = s.kind === 'cv_cover_letter' ? 'CV-and-Cover-Letter' : 'Document';
       triggerDownload(data, `${label}-AI-Draft.${format}`);
     } catch (err) {
       patch(s.id, { error: errorMessage(err, 'Download failed') });
@@ -215,31 +218,12 @@ export default function AIStudio() {
     try { await navigator.clipboard.writeText(msg.content); } catch { /* clipboard unavailable */ }
   }
 
-  async function saveAsMaster(msg) {
-    const s = active;
-    if (!s.clientId || !s.domainId) return;
-    patch(s.id, { saveBusyId: msg.id, error: null });
-    try {
-      const type = s.kind === 'cv' ? 'master_cv' : 'master_cover_letter';
-      const label = s.kind === 'cv' ? 'Master CV' : 'Master Cover Letter';
-      const fd = new FormData();
-      fd.append('domainId', s.domainId);
-      fd.append('type', type);
-      fd.append('file', new File([msg.content], `${label} — AI draft.txt`, { type: 'text/plain' }));
-      await api.post(`/clients/${s.clientId}/master-docs`, fd);
-      patch(s.id, { saveBusyId: null, savedId: msg.id });
-    } catch (err) {
-      patch(s.id, { saveBusyId: null, error: errorMessage(err, 'Save failed') });
-    }
-  }
-
-  const canSaveMaster = active.clientId && active.domainId && active.kind !== 'freeform';
 
   return (
     <AppShell>
       <PageHeader
         title="AI Studio"
-        subtitle="Chat with the assistant to draft and refine CVs and cover letters — conversations are saved automatically"
+        subtitle="Paste a job description and get a tailored CV and cover letter back — conversations are saved automatically"
       />
 
       {/* Conversation tabs */}
@@ -284,20 +268,34 @@ export default function AIStudio() {
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         {/* ---------------- context ---------------- */}
-        <Card className="animate-rise h-fit">
-          <CardHeader title="Context" subtitle="Grounds the chat in this client's documents" />
+        <Card className="animate-rise h-fit overflow-hidden">
+          <CardHeader title="Chat settings" subtitle="Pick the mode, then paste job descriptions" />
           <div className="space-y-4 p-6">
-            <Select id="ai-client" label="Client (optional)" value={active.clientId}
-              onChange={(e) => updateActive({ clientId: e.target.value, domainId: '' })}>
-              <option value="">— No client context —</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.fullName}</option>)}
-            </Select>
-            <Select id="ai-domain" label="Domain (optional)" value={active.domainId}
-              onChange={(e) => updateActive({ domainId: e.target.value })}
-              disabled={!activeClient}>
-              <option value="">Auto</option>
-              {(activeClient?.domains || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </Select>
+            <div>
+              <span className="label-caps text-navy-800/70 mb-1.5 block">Mode</span>
+              <div className="flex flex-col gap-1.5 rounded-xl bg-ivory p-1.5">
+                {KINDS.map((k) => (
+                  <button key={k.key} type="button" disabled={kindLocked}
+                    onClick={() => updateActive({ kind: k.key })}
+                    aria-pressed={active.kind === k.key}
+                    className={`rounded-lg px-3 py-2 text-left text-sm font-semibold transition disabled:cursor-not-allowed ${
+                      active.kind === k.key
+                        ? 'bg-navy-800 text-ivory'
+                        : `text-ink-soft ${kindLocked ? 'opacity-50' : 'hover:text-navy-800'}`
+                    }`}>
+                    {k.label}
+                    <span className={`mt-0.5 block text-xs font-normal ${active.kind === k.key ? 'text-ivory/70' : 'text-ink-soft'}`}>
+                      {k.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-ink-soft">
+                {kindLocked
+                  ? 'The mode is fixed for this chat — start a new chat to switch.'
+                  : 'Chosen once per chat.'}
+              </p>
+            </div>
             {modelConfig.canChoose ? (
               <Select id="ai-model" label="Claude model" value={active.model}
                 onChange={(e) => updateActive({ model: e.target.value })}>
@@ -319,22 +317,22 @@ export default function AIStudio() {
                 Claude is not connected yet. Add ANTHROPIC_API_KEY on the server before going live.
               </p>
             )}
-            <div>
-              <span className="label-caps text-navy-800/70 mb-1.5 block">Document type</span>
-              <div className="inline-flex rounded-xl bg-ivory p-1">
-                {KINDS.map((k) => (
-                  <button key={k.key} type="button" onClick={() => updateActive({ kind: k.key })}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-                      active.kind === k.key ? 'bg-navy-800 text-ivory' : 'text-ink-soft hover:text-navy-800'
-                    }`}>
-                    {k.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {active.kind === 'cv_cover_letter' && (
+              modelConfig.masterPromptReady ? (
+                <p className="rounded-lg bg-success-soft px-3 py-2 text-xs text-success">
+                  ✓ The master prompt runs automatically when this chat starts — just paste the job
+                  description. It is cached for an hour, so each job description only costs for itself.
+                </p>
+              ) : (
+                <p className="rounded-lg bg-alert-soft px-3 py-2 text-xs text-alert">
+                  No master prompt has been saved yet. An Admin Lead can add one under
+                  Admin → AI Settings.
+                </p>
+              )
+            )}
             <p className="border-t border-ivory-dark pt-3 text-xs text-ink-soft">
-              Ask follow-ups like “make it shorter” or “emphasise leadership” — the assistant keeps the
-              whole conversation and refines the last draft.
+              Paste one job description after another in the same chat — each gets its own CV and cover
+              letter. Follow-ups like “make it shorter” refine the last draft.
             </p>
           </div>
         </Card>
@@ -354,11 +352,14 @@ export default function AIStudio() {
               <div className="py-14 text-center">
                 <div className="mb-2 text-3xl">✨</div>
                 <p className="text-sm text-ink-soft">
-                  Start the conversation — describe the document you need.
+                  {active.kind === 'cv_cover_letter'
+                    ? 'Paste a job description to get a tailored CV and cover letter.'
+                    : 'Start the conversation — describe what you need.'}
                 </p>
                 <p className="mx-auto mt-2 max-w-sm text-xs text-ink-soft/80">
-                  e.g. “Rewrite the master CV for fintech platform-engineering roles; emphasise
-                  Kubernetes and payments experience.”
+                  {active.kind === 'cv_cover_letter'
+                    ? 'Paste the job description (and attach the candidate’s CV) — the saved master prompt is applied automatically.'
+                    : 'e.g. “Summarise this job spec into five interview questions.”'}
                 </p>
               </div>
             )}
@@ -404,13 +405,6 @@ export default function AIStudio() {
                         className="rounded-lg px-2.5 py-1 text-xs font-semibold text-ink-soft transition hover:bg-navy-800/5 hover:text-navy-800">
                         Download .txt
                       </button>
-                      {canSaveMaster && (
-                        <button type="button" onClick={() => saveAsMaster(m)} disabled={active.saveBusyId === m.id}
-                          className="rounded-lg px-2.5 py-1 text-xs font-semibold text-gold-600 transition hover:bg-gold-100 disabled:opacity-60">
-                          {active.saveBusyId === m.id ? 'Saving…' : 'Save as master'}
-                        </button>
-                      )}
-                      {active.savedId === m.id && <span className="text-xs font-semibold text-success">Saved ✓</span>}
                     </div>
                   </div>
                 </div>
@@ -454,7 +448,11 @@ export default function AIStudio() {
               <textarea
                 rows={1} value={active.input} maxLength={MAX_PROMPT_CHARS} onKeyDown={onKeyDown}
                 onChange={(e) => updateActive({ input: e.target.value })}
-                placeholder={active.messages.length ? 'Ask a follow-up…' : 'Describe the document you need…'}
+                placeholder={active.messages.length
+                  ? 'Paste the next job description, or ask a follow-up…'
+                  : active.kind === 'cv_cover_letter'
+                    ? 'Paste the job description…'
+                    : 'Describe what you need…'}
                 className="max-h-40 min-h-[40px] flex-1 resize-y rounded-xl border border-navy-800/15 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-500/30"
               />
               <Button type="submit" disabled={restoring || active.busy || !active.input.trim()} className="!px-4 shrink-0">

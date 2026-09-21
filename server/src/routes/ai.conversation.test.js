@@ -5,19 +5,41 @@ import {
   MAX_AI_HISTORY_JSON_CHARS,
   MAX_AI_PROMPT_CHARS,
   MAX_SAVED_AI_MESSAGES,
+  AI_KINDS,
+  normaliseKind,
   normalizeSavedMessages,
   parseConversationHistory,
 } from './ai.routes.js';
-import { buildDocumentUserContent } from '../lib/ai.js';
+
 
 test('AI Studio accepts substantial CV prompts beyond the former 6,000-character ceiling', () => {
   assert.equal(MAX_AI_PROMPT_CHARS, 50_000);
   assert.ok(MAX_AI_HISTORY_JSON_CHARS >= 500_000);
+});
 
-  const pastedCv = 'A'.repeat(20_000);
-  const content = buildDocumentUserContent({ prompt: pastedCv, isFollowUp: false });
-  assert.equal(content.length, pastedCv.length + 'Instructions:\n'.length);
-  assert.ok(content.endsWith(pastedCv));
+test('the specialist prompt reaches Claude untouched — no injected labels to echo back', () => {
+  const pasted = 'Reformat this CV for a fintech role.';
+  const [turn] = parseConversationHistory(JSON.stringify([{ role: 'user', content: pasted }]));
+  assert.equal(turn.content, pasted);
+});
+
+test('the two document modes are CV & cover letter, and freeform', () => {
+  assert.deepEqual(AI_KINDS, ['cv_cover_letter', 'freeform']);
+  assert.equal(normaliseKind('cv'), 'cv_cover_letter');
+  assert.equal(normaliseKind('cover_letter'), 'cv_cover_letter');
+  assert.equal(normaliseKind('freeform'), 'freeform');
+});
+
+test('uploaded reference text rides with its turn but never reaches the browser', () => {
+  const saved = normalizeSavedMessages([
+    { id: 'u1', role: 'user', content: 'Use this CV', files: ['cv.pdf'], refs: [{ name: 'cv.pdf', text: 'CV BODY' }] },
+  ]);
+  assert.deepEqual(saved[0].refs, [{ name: 'cv.pdf', text: 'CV BODY' }]);
+
+  const [turn] = parseConversationHistory(JSON.stringify(saved));
+  assert.match(turn.content, /<document name="cv.pdf">/);
+  assert.match(turn.content, /CV BODY/);
+  assert.ok(turn.content.endsWith('Use this CV'));
 });
 
 test('follow-up history keeps a complete realistic CV and the latest instruction', () => {

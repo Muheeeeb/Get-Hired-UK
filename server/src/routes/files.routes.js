@@ -7,9 +7,26 @@ import {
   resolveLocalPath,
   inlineContentType,
 } from '../lib/storage.js';
+import { env } from '../config/env.js';
 
 // "View" opens PDFs/images/text inline in the browser; other types download.
 const wantInline = (fileName) => Boolean(inlineContentType(fileName));
+
+/**
+ * Let the portal embed an inline file in its own document viewer.
+ *
+ * Helmet's defaults (`X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'`)
+ * are right for every other response, but the SPA is served from a different
+ * origin than this API, so a PDF opened in the viewer would be blocked. Narrow
+ * the allowance to the configured client origins only — never to `*`.
+ */
+function allowPortalEmbedding(res) {
+  const origins = env.clientOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${origins.join(' ')}`.trim());
+  // The viewer loads this cross-origin; helmet's default CORP would refuse it.
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+}
 
 const router = Router();
 
@@ -42,7 +59,7 @@ router.get('/:docId/signed-url', authenticate, async (req, res, next) => {
         (user.role === 'client' && c.userId === user.id);
       if (!allowed) return res.status(403).json({ error: 'Forbidden' });
       const url = await getSignedFileUrl(master.fileKey, master.fileName, { inline: wantInline(master.fileName) });
-      return res.json({ url, fileName: master.fileName, kind: 'master' });
+      return res.json({ url, fileName: master.fileName, kind: 'master', inline: wantInline(master.fileName) });
     }
 
     // 2. Tailored documents — HARD BLOCK for clients, no exceptions.
@@ -61,7 +78,7 @@ router.get('/:docId/signed-url', authenticate, async (req, res, next) => {
         (user.role === 'employee' && c.assignedEmployeeId === user.id);
       if (!allowed) return res.status(403).json({ error: 'Forbidden' });
       const url = await getSignedFileUrl(tailored.fileKey, tailored.fileName, { inline: wantInline(tailored.fileName) });
-      return res.json({ url, fileName: tailored.fileName, kind: 'tailored' });
+      return res.json({ url, fileName: tailored.fileName, kind: 'tailored', inline: wantInline(tailored.fileName) });
     }
 
     // 3. Interview resources — visible to any authenticated role.
@@ -69,7 +86,7 @@ router.get('/:docId/signed-url', authenticate, async (req, res, next) => {
     if (resource && resource.fileKey) {
       const fileName = resource.fileName || resource.title;
       const url = await getSignedFileUrl(resource.fileKey, fileName, { inline: wantInline(fileName) });
-      return res.json({ url, fileName, kind: 'resource' });
+      return res.json({ url, fileName, kind: 'resource', inline: wantInline(fileName) });
     }
 
     // 4. Chat attachments — same access rules as the conversation itself.
@@ -86,7 +103,7 @@ router.get('/:docId/signed-url', authenticate, async (req, res, next) => {
           (convo.assignedEmployeeId === user.id || convo.createdById === user.id));
       if (!allowed) return res.status(403).json({ error: 'Forbidden' });
       const url = await getSignedFileUrl(message.fileKey, message.fileName, { inline: wantInline(message.fileName) });
-      return res.json({ url, fileName: message.fileName, kind: 'chat' });
+      return res.json({ url, fileName: message.fileName, kind: 'chat', inline: wantInline(message.fileName) });
     }
 
     // 5. Interview-prep session materials — admin, the client, or the involved employee.
@@ -102,7 +119,7 @@ router.get('/:docId/signed-url', authenticate, async (req, res, next) => {
           (session.assignedEmployeeId === user.id || session.client.assignedEmployeeId === user.id));
       if (!allowed) return res.status(403).json({ error: 'Forbidden' });
       const url = await getSignedFileUrl(session.fileKey, session.fileName, { inline: wantInline(session.fileName) });
-      return res.json({ url, fileName: session.fileName, kind: 'session' });
+      return res.json({ url, fileName: session.fileName, kind: 'session', inline: wantInline(session.fileName) });
     }
 
     return res.status(404).json({ error: 'Document not found' });
@@ -131,6 +148,7 @@ router.get('/local/:key', async (req, res) => {
   // "View": render inline in the browser when the type supports it (PDF, images, text).
   const contentType = inline ? inlineContentType(downloadName) : null;
   if (contentType) {
+    allowPortalEmbedding(res);
     res.setHeader('Content-Type', contentType);
     res.setHeader(
       'Content-Disposition',

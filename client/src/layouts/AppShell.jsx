@@ -20,7 +20,12 @@ function navFor(user) {
       { to: '/social', label: 'Content Studio', icon: '📝' },
       { to: '/admin/social-team', label: 'Social Team', icon: '🖋️' },
       { to: '/admin/chat', label: 'Chat', icon: '💬', chat: true },
-      ...(user.isLead ? [{ to: '/admin/team', label: 'Team', icon: '🛡️' }] : []),
+      // The master prompt is main-console-only: sub-admins never see the link,
+      // and the API refuses them regardless.
+      ...(user.isLead ? [
+        { to: '/admin/ai-settings', label: 'AI Settings', icon: '✨' },
+        { to: '/admin/team', label: 'Team', icon: '🛡️' },
+      ] : []),
     ];
   }
   if (user?.role === 'employee') {

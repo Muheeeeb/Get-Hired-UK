@@ -61,6 +61,49 @@ export async function extractDocumentText(buffer, filename, maxChars = MAX_EXTRA
   return { text: text.slice(0, maxChars), truncated: text.length > maxChars };
 }
 
+/**
+ * Prepare uploaded references for Claude.
+ *
+ * A PDF keeps its raw bytes so it can be sent as a native `document` block — the
+ * same way claude.ai reads an attachment, which preserves columns, tables and
+ * layout that a text extractor destroys. Its extracted text is kept alongside so
+ * later turns in the conversation still have the content without re-uploading.
+ */
+export async function extractReferenceAttachments(files, maxChars = MAX_REFERENCE_CHARS) {
+  const attachments = [];
+  const usedFiles = [];
+  const truncatedFiles = [];
+  let remaining = maxChars;
+
+  for (const file of files) {
+    const name = path.basename(file.originalname);
+    const isPdf = name.toLowerCase().endsWith('.pdf');
+    if (remaining <= 0 && !isPdf) {
+      truncatedFiles.push(file.originalname);
+      continue;
+    }
+
+    let text = '';
+    let truncated = false;
+    try {
+      const result = await extractDocumentText(file.buffer, file.originalname, Math.max(remaining, 0));
+      text = result.text;
+      truncated = result.truncated;
+    } catch (err) {
+      // A scanned PDF has no extractable text, but Claude can still read the
+      // document block itself — only a non-PDF failure is fatal.
+      if (!isPdf) throw err;
+    }
+
+    attachments.push({ name, text, ...(isPdf ? { pdf: file.buffer } : {}) });
+    usedFiles.push(file.originalname);
+    remaining -= text.length;
+    if (truncated) truncatedFiles.push(file.originalname);
+  }
+
+  return { attachments, usedFiles, truncatedFiles };
+}
+
 /** Extract multiple references with one bounded context budget. */
 export async function extractReferenceFiles(files, maxChars = MAX_REFERENCE_CHARS) {
   const sections = [];

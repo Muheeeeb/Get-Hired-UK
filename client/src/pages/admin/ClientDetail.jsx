@@ -4,11 +4,14 @@ import { api, errorMessage } from '../../api/client';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
 import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select } from '../../components/ui';
 import { JobTable } from '../../components/JobTable';
-import { DownloadButton, formatDate } from '../../components/files';
+import { DeleteFileButton, DownloadButton, formatDate } from '../../components/files';
 import { LinkedInStepper } from '../../components/LinkedInStepper';
 import { ClientCredentials } from '../../components/ClientCredentials';
 import { ClientPersonalDetails } from '../../components/ClientPersonalDetails';
 import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
+import { ApplicationCharts } from '../../components/ApplicationCharts';
+import { CollapsibleCard } from '../../components/CollapsibleCard';
+import { PackageMonthsEditor } from '../../components/PackageMonthsEditor';
 
 /** Admin client detail — sees everything: package, domains, masters, jobs + tailored files. */
 export default function ClientDetail() {
@@ -24,8 +27,9 @@ export default function ClientDetail() {
   const [pkg, setPkg] = useState(null);
   const [domainsDraft, setDomainsDraft] = useState(null);
   const [packageChoices, setPackageChoices] = useState([]);
-  const [extendMonths, setExtendMonths] = useState('1');
-  const [extending, setExtending] = useState(false);
+  // Bumped on every successful load so child editors refetch instead of holding
+  // a draft built from dates that have since changed.
+  const [dataVersion, setDataVersion] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +49,7 @@ export default function ClientDetail() {
         assignedEmployeeId: d.assignedEmployeeId || '',
       });
       setDomainsDraft(d.domains.map((dom) => dom.name));
+      setDataVersion((v) => v + 1);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -94,22 +99,6 @@ export default function ClientDetail() {
       load();
     } catch (err) {
       flash(errorMessage(err), 'error');
-    }
-  }
-
-  async function extendPackage() {
-    setExtending(true);
-    try {
-      const { data } = await api.post(`/admin/clients/${id}/extend`, { months: Number(extendMonths) });
-      flash(
-        `Package extended: ${formatDate(data.previousExpiryDate)} → ${formatDate(data.expiryDate)} ` +
-        `(${data.packageMonths} package month${data.packageMonths === 1 ? '' : 's'})`,
-      );
-      await load();
-    } catch (err) {
-      flash(errorMessage(err), 'error');
-    } finally {
-      setExtending(false);
     }
   }
 
@@ -217,7 +206,20 @@ export default function ClientDetail() {
 
           <ClientCredentials clientId={id} canViewLog />
 
+          <ApplicationCharts
+            stats={dash.applicationStats}
+            months={dash.monthlyBreakdown}
+            className="mt-6"
+          />
+
           <MonthlyApplicationBreakdown months={dash.monthlyBreakdown} className="mt-6" />
+
+          <PackageMonthsEditor
+            clientId={id}
+            className="mt-6"
+            reloadToken={dataVersion}
+            onSaved={() => { load(); flash('Package months updated'); }}
+          />
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <Card>
@@ -249,20 +251,11 @@ export default function ClientDetail() {
                   ))}
                 </Select>
                 <Button type="submit">Save changes</Button>
-                <div className="border-t border-ivory-dark pt-4">
-                  <div className="mb-2 text-sm font-semibold text-navy-800">
-                    Extend package <span className="font-normal text-ink-soft">· currently {dash.packageMonths} month{dash.packageMonths === 1 ? '' : 's'}</span>
-                  </div>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <Input id="pkg-extend" label="Additional months" type="number" min={1} max={24}
-                      value={extendMonths} onChange={(e) => setExtendMonths(e.target.value)} />
-                    <Button type="button" variant="navy"
-                      disabled={extending || Number(extendMonths) < 1 || Number(extendMonths) > 24}
-                      onClick={extendPackage}>
-                      {extending ? 'Extending…' : 'Extend package'}
-                    </Button>
-                  </div>
-                </div>
+                <p className="border-t border-ivory-dark pt-4 text-xs text-ink-soft">
+                  The start and end dates above are Month 1's start and the last month's end. Use
+                  <strong className="font-semibold text-navy-800"> Package Months</strong> below to edit
+                  any individual month, extend the package, or remove a month.
+                </p>
               </form>
             </Card>
 
@@ -297,17 +290,25 @@ export default function ClientDetail() {
             </Card>
           </div>
 
-          <Card className="mt-6">
+          <Card className="mt-6 overflow-hidden">
             <CardHeader title="Master Documents" subtitle="Visible to the client" />
             <ul className="divide-y divide-ivory-dark">
               {dash.domains.map((domain) => (
-                <li key={domain.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                <li key={domain.id} className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-start sm:justify-between">
                   <span className="min-w-0 break-words font-semibold text-navy-800">{domain.name}</span>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex min-w-0 flex-wrap gap-2 sm:justify-end">
                     {domain.masterDocuments.length === 0 && <Badge tone="alert">No masters yet</Badge>}
                     {domain.masterDocuments.map((doc) => (
-                      <DownloadButton key={doc.id} docId={doc.id}
-                        label={doc.type === 'master_cv' ? 'Master CV' : 'Cover Letter'} />
+                      <span key={doc.id} className="inline-flex max-w-full items-center gap-0.5 rounded-lg bg-ivory/70 pr-0.5">
+                        <DownloadButton docId={doc.id} fileName={doc.fileName}
+                          label={doc.type === 'master_cv' ? 'Master CV' : 'Cover Letter'} />
+                        <DeleteFileButton
+                          endpoint={`/clients/${id}/master-docs/${doc.id}`}
+                          label={`the ${doc.type === 'master_cv' ? 'master CV' : 'master cover letter'} for "${domain.name}"`}
+                          onDeleted={load}
+                          className="!px-1.5"
+                        />
+                      </span>
                     ))}
                   </div>
                 </li>
@@ -315,17 +316,18 @@ export default function ClientDetail() {
             </ul>
           </Card>
 
-          <Card className="mt-6">
-            <CardHeader
-              title="Job Applications"
-              subtitle="Full log including tailored files (admin view)"
-            />
+          <CollapsibleCard
+            className="mt-6"
+            title="Job Applications"
+            subtitle="Full log including tailored files (admin view)"
+            badge={<Badge tone="navy">{jobs?.length ?? '…'} logged</Badge>}
+          >
             {!jobs ? (
               <div className="p-6"><Skeleton className="h-32" /></div>
             ) : (
-              <JobTable jobs={jobs} showTailored />
+              <JobTable jobs={jobs} showTailored onDocumentDeleted={load} />
             )}
-          </Card>
+          </CollapsibleCard>
         </>
       )}
     </AppShell>

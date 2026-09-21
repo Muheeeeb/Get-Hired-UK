@@ -3,12 +3,14 @@ import { useParams, Link } from 'react-router-dom';
 import { api, errorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AppShell, PageHeader } from '../../layouts/AppShell';
-import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Select, Spinner } from '../../components/ui';
+import { Card, CardHeader, Skeleton, EmptyState, Badge, Button, Input, Spinner } from '../../components/ui';
 import { JobTable } from '../../components/JobTable';
-import { DownloadButton } from '../../components/files';
+import { DeleteFileButton, DownloadButton } from '../../components/files';
 import { ClientCredentials } from '../../components/ClientCredentials';
 import { ClientPersonalDetails } from '../../components/ClientPersonalDetails';
 import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
+import { ApplicationCharts } from '../../components/ApplicationCharts';
+import { CollapsibleCard } from '../../components/CollapsibleCard';
 
 const TABS = [
   { key: 'details', label: 'Personal Details' },
@@ -82,6 +84,11 @@ export default function ClientWorkspace() {
           {tab === 'details' && (
             <div className="space-y-6">
               <ClientPersonalDetails client={dash.client} className="animate-rise" />
+              <ApplicationCharts
+                stats={dash.applicationStats}
+                months={dash.monthlyBreakdown}
+                className="animate-rise animate-rise-1"
+              />
               <MonthlyApplicationBreakdown months={dash.monthlyBreakdown} className="animate-rise animate-rise-1" />
             </div>
           )}
@@ -195,21 +202,26 @@ function JobsTab({ clientId, dash, jobs, onChanged }) {
         </form>
       </Card>
 
-      <Card className="animate-rise animate-rise-1">
-        <CardHeader title="Application Log" subtitle="Everything filed for this client — tailored documents attached" />
+      <CollapsibleCard
+        className="animate-rise animate-rise-1"
+        title="Application Log"
+        subtitle="Everything filed for this client — click to open the full log"
+        badge={<Badge tone="navy">{jobs?.length ?? '…'} logged</Badge>}
+      >
         {!jobs ? (
           <div className="p-6"><Skeleton className="h-32" /></div>
         ) : (
           <JobTable
             jobs={jobs}
             showTailored
+            onDocumentDeleted={onChanged}
             onDelete={async (jobId) => {
               await api.delete(`/jobs/${jobId}`);
               onChanged();
             }}
           />
         )}
-      </Card>
+      </CollapsibleCard>
     </div>
   );
 }
@@ -239,39 +251,49 @@ function MastersTab({ clientId, dash, onChanged }) {
   }
 
   return (
-    <Card className="animate-rise">
+    // `overflow-hidden` + `min-w-0` at every level: domain names here are free
+    // text up to 2,000 characters and file names can be a single long token,
+    // which is what used to push this page past its margins.
+    <Card className="animate-rise overflow-hidden">
       <CardHeader
         title="Domains & Master Documents"
         subtitle="One master CV + one master cover letter per domain. Masters are visible to the client."
       />
-      {err && <p className="px-6 pt-4 text-sm text-danger">{err}</p>}
+      {err && <p className="break-words px-6 pt-4 text-sm text-danger">{err}</p>}
       <ul className="divide-y divide-ivory-dark">
         {dash.domains.map((domain) => (
-          <li key={domain.id} className="px-6 py-5">
+          <li key={domain.id} className="min-w-0 px-6 py-5">
             <div className="break-words font-display text-lg text-navy-800">{domain.name}</div>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               {['master_cv', 'master_cover_letter'].map((type) => {
                 const existing = domain.masterDocuments.find((d) => d.type === type);
                 const uploading = busyDoc === `${domain.id}:${type}`;
                 return (
-                  <div key={type} className="rounded-xl border border-ivory-dark bg-ivory/50 p-4">
-                    <div className="flex items-center justify-between">
+                  <div key={type} className="min-w-0 overflow-hidden rounded-xl border border-ivory-dark bg-ivory/50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="label-caps text-navy-800/70">
                         {type === 'master_cv' ? 'Master CV' : 'Master Cover Letter'}
                       </span>
                       {existing ? <Badge tone="success">✓ Uploaded</Badge> : <Badge tone="alert">Missing</Badge>}
                     </div>
                     {existing && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="truncate text-sm text-ink" title={existing.fileName}>{existing.fileName}</span>
-                        <DownloadButton docId={existing.id} label="View" />
+                      <div className="mt-2 min-w-0">
+                        <p className="break-all text-sm text-ink" title={existing.fileName}>{existing.fileName}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <DownloadButton docId={existing.id} fileName={existing.fileName} label="View" />
+                          <DeleteFileButton
+                            endpoint={`/clients/${clientId}/master-docs/${existing.id}`}
+                            label={`the ${type === 'master_cv' ? 'master CV' : 'master cover letter'} for "${domain.name}"`}
+                            onDeleted={onChanged}
+                          />
+                        </div>
                       </div>
                     )}
-                    <label className="mt-3 block">
+                    <label className="mt-3 block min-w-0">
                       <span className="sr-only">{existing ? 'Replace' : 'Upload'} {type.replace(/_/g, ' ')} for {domain.name}</span>
                       <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.odt" disabled={uploading}
                         onChange={(e) => uploadMaster(domain.id, type, e.target.files[0])}
-                        className="block w-full text-xs text-ink-soft file:mr-3 file:rounded-lg file:border-0 file:bg-gold-500 file:px-3.5 file:py-2 file:text-xs file:font-semibold file:text-navy-900 hover:file:bg-gold-400 file:cursor-pointer" />
+                        className="block w-full max-w-full text-xs text-ink-soft file:mr-3 file:rounded-lg file:border-0 file:bg-gold-500 file:px-3.5 file:py-2 file:text-xs file:font-semibold file:text-navy-900 hover:file:bg-gold-400 file:cursor-pointer" />
                     </label>
                     {uploading && <p className="mt-2 text-xs text-ink-soft">Uploading…</p>}
                   </div>

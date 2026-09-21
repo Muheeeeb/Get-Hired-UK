@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole } from '../middleware/auth.js';
 import { daysUntil, dateOnly, todayISO } from '../utils/dates.js';
 import { packagePeriodWhere } from '../lib/packageTracking.js';
+import { listPackageMonthsByClient } from '../lib/packageMonths.js';
 
 const router = Router();
 router.use(authenticate, authorizeRole(['employee', 'admin']));
@@ -23,9 +24,13 @@ router.get('/clients', async (req, res, next) => {
       orderBy: { createdAt: 'asc' },
     });
 
+    // One query for every client's stored month ranges, so the per-client counts
+    // below use the admin-edited dates rather than re-deriving them.
+    const monthsByClient = await listPackageMonthsByClient(clients.map((c) => c.id));
+
     const withCounts = await Promise.all(
       clients.map(async (c) => {
-        const period = packagePeriodWhere(c, todayISO());
+        const period = packagePeriodWhere(c, todayISO(), monthsByClient.get(c.id));
         const [monthCount, todayCount] = await Promise.all([
           prisma.jobApplication.count({
             where: { clientId: c.id, applicationDate: period.applicationDate },

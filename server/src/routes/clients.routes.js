@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate.js';
 import { buildFileKey, saveFile, deleteFile } from '../lib/storage.js';
 import { daysUntil, dateOnly, todayISO } from '../utils/dates.js';
 import { buildPackageMonths } from '../lib/packageTracking.js';
+import { listPackageMonths } from '../lib/packageMonths.js';
 import { encryptSecret, decryptSecret, credentialsEnabled } from '../lib/secrets.js';
 
 const router = Router();
@@ -68,7 +69,7 @@ const upload = multer({
 router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
   try {
     const profile = req.clientProfile;
-    const [packageJobs, domains, resourceCount, recentJobs] = await Promise.all([
+    const [packageJobs, domains, resourceCount, recentJobs, storedMonths] = await Promise.all([
       prisma.jobApplication.findMany({
         where: { clientId: profile.id },
         select: { applicationDate: true },
@@ -89,6 +90,7 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
         take: 5,
         select: { id: true, jobTitle: true, company: true, applicationDate: true, jobUrl: true },
       }),
+      listPackageMonths(profile.id),
     ]);
 
     const daysRemaining = daysUntil(profile.expiryDate);
@@ -98,6 +100,7 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
       monthlyJobTarget: profile.monthlyJobTarget,
       applicationDates: packageJobs.map((job) => job.applicationDate),
       today: todayISO(),
+      storedMonths,
     });
 
     const payload = {
@@ -125,6 +128,15 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
       },
       monthlyBreakdown: packageTracking.months,
       packageMonths: packageTracking.totalMonths,
+      // Powers the application charts. Every figure is derived from the package
+      // months above, so editing a month's dates re-shapes the charts too.
+      applicationStats: {
+        today: packageTracking.appliedToday,
+        total: packageTracking.totalApplications,
+        currentMonth: packageTracking.current,
+        nextMonth: packageTracking.next,
+        target: profile.monthlyJobTarget,
+      },
       expiry: {
         // Days-remaining is computed here, server-side — never from the browser clock.
         daysRemaining,
@@ -215,6 +227,31 @@ router.post(
       if (previous && previous.fileKey !== fileKey) await deleteFile(previous.fileKey);
 
       res.status(201).json({ document: doc });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * Remove a master CV / cover letter that was uploaded by mistake or superseded.
+ * Admin and the assigned employee only — the row goes first, then the blob, so a
+ * failed storage delete can never leave a record pointing at nothing.
+ */
+router.delete(
+  '/:id/master-docs/:docId',
+  authorizeRole(['admin', 'employee']),
+  loadClientScope,
+  async (req, res, next) => {
+    try {
+      const doc = await prisma.masterDocument.findFirst({
+        where: { id: req.params.docId, domain: { clientId: req.clientProfile.id } },
+        select: { id: true, fileKey: true },
+      });
+      if (!doc) return res.status(404).json({ error: 'Master document not found' });
+      await prisma.masterDocument.delete({ where: { id: doc.id } });
+      await deleteFile(doc.fileKey);
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

@@ -9,6 +9,8 @@ import { LinkedInStepper } from '../../components/LinkedInStepper';
 import { JobTable } from '../../components/JobTable';
 import { DownloadButton, formatDate } from '../../components/files';
 import { MonthlyApplicationBreakdown } from '../../components/MonthlyApplicationBreakdown';
+import { ApplicationCharts } from '../../components/ApplicationCharts';
+import { CollapsibleCard } from '../../components/CollapsibleCard';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -120,6 +122,12 @@ export default function ClientDashboard() {
             </div>
           </section>
 
+          <ApplicationCharts
+            stats={data.applicationStats}
+            months={data.monthlyBreakdown}
+            className="mt-6 animate-rise animate-rise-1"
+          />
+
           <MonthlyApplicationBreakdown months={data.monthlyBreakdown} className="mt-6 animate-rise animate-rise-1" />
 
           {/* LinkedIn tracker */}
@@ -215,7 +223,7 @@ export default function ClientDashboard() {
                             </p>
                           )}
                         </div>
-                        {r.hasFile && <DownloadButton docId={r.id} label="Download" />}
+                        {r.hasFile && <DownloadButton docId={r.id} label="View" />}
                       </div>
                     </li>
                   ))}
@@ -224,12 +232,14 @@ export default function ClientDashboard() {
             </Card>
           </div>
 
-          {/* Job list — safe columns only. No tailored files here, by design. */}
-          <Card className="mt-6 animate-rise animate-rise-4">
-            <CardHeader
-              title="Where We've Applied For You"
-              subtitle={`${jobs?.length ?? '…'} applications and counting`}
-            />
+          {/* Job list — safe columns only, and closed until asked for, so the
+              dashboard leads with progress rather than a wall of rows. */}
+          <CollapsibleCard
+            className="mt-6 animate-rise animate-rise-4"
+            title="Where We've Applied For You"
+            subtitle={`${jobs?.length ?? '…'} applications and counting — click to see the full list`}
+            badge={<Badge tone="gold">{jobs?.length ?? '…'}</Badge>}
+          >
             {!jobs ? (
               <div className="p-6 space-y-3">
                 <Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" />
@@ -237,7 +247,7 @@ export default function ClientDashboard() {
             ) : (
               <JobTable jobs={jobs} showTailored={false} />
             )}
-          </Card>
+          </CollapsibleCard>
         </>
       )}
     </AppShell>

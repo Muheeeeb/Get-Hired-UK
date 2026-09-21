@@ -36,6 +36,12 @@
 body {
   min-width: 0;
   overflow-x: hidden;
+  /* Much of what the team types is free text that can arrive as one unbroken
+     token — a domain name up to 2,000 characters, an uploaded file name, a job
+     URL. Without this a single long word sets the minimum width of its card and
+     the text runs past the page margin. `break-word` only splits a word that
+     would otherwise overflow, so ordinary wrapping is untouched. */
+  overflow-wrap: break-word;
   font-family: var(--font-sans);
   background-color: var(--color-ivory);
   color: var(--color-ink);

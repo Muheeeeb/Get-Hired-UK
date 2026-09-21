@@ -64,6 +64,33 @@ router.post(
   }
 );
 
+/**
+ * Remove one tailored document from a logged job — the file attached to the job
+ * log by mistake, or replaced by a newer version. The job itself stays.
+ */
+router.delete(
+  '/tailored-docs/:docId',
+  authenticate,
+  authorizeRole(['admin', 'employee']),
+  async (req, res, next) => {
+    try {
+      const doc = await prisma.tailoredDocument.findUnique({
+        where: { id: req.params.docId },
+        include: { jobApplication: { include: { client: true } } },
+      });
+      if (!doc) return res.status(404).json({ error: 'Document not found' });
+      if (req.user.role === 'employee' && doc.jobApplication.client.assignedEmployeeId !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      await prisma.tailoredDocument.delete({ where: { id: doc.id } });
+      await deleteFile(doc.fileKey);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 /** Delete a mistaken job entry (and its tailored documents, via cascade). */
 router.delete(
   '/:jobId',
