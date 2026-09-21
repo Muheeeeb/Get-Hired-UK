@@ -25,6 +25,9 @@ function newSession(n) {
   return {
     id: `draft-${n}`, conversationId: null, n,
     kind: 'cv_cover_letter',
+    // Whether THIS chat is actually running a master prompt — a chat started
+    // before the setting existed has none, and the banner must not claim it does.
+    hasMasterPrompt: false,
     model: '',
     messages: [], input: '', files: [],
     busy: false, error: null, exportBusyId: null,
@@ -164,6 +167,7 @@ export default function AIStudio() {
       setSessions((prev) => prev.map((x) => (x.id === s.id ? {
         ...x,
         conversationId: data.conversationId,
+        hasMasterPrompt: Boolean(data.hasMasterPrompt),
         busy: false,
         messages: data.messages || [
           ...x.messages,
@@ -297,12 +301,22 @@ export default function AIStudio() {
               </p>
             </div>
             {modelConfig.canChoose ? (
-              <Select id="ai-model" label="Claude model" value={active.model}
-                onChange={(e) => updateActive({ model: e.target.value })}>
-                {modelConfig.models.map((model) => (
-                  <option key={model.id} value={model.id}>{model.name}</option>
-                ))}
-              </Select>
+              <div>
+                {/* Locked once the chat starts: prompt caches are per-model, so
+                    switching mid-chat would throw the master-prompt cache away
+                    and every later job description would pay full price again. */}
+                <Select id="ai-model" label="Claude model" value={active.model} disabled={kindLocked}
+                  onChange={(e) => updateActive({ model: e.target.value })}>
+                  {modelConfig.models.map((model) => (
+                    <option key={model.id} value={model.id}>{model.name}</option>
+                  ))}
+                </Select>
+                {kindLocked && (
+                  <p className="mt-1 text-xs text-ink-soft">
+                    Fixed for this chat to keep the cached prompt — start a new chat to switch model.
+                  </p>
+                )}
+              </div>
             ) : (
               <div>
                 <span className="label-caps text-navy-800/70 mb-1.5 block">Claude model</span>
@@ -318,15 +332,21 @@ export default function AIStudio() {
               </p>
             )}
             {active.kind === 'cv_cover_letter' && (
-              modelConfig.masterPromptReady ? (
+              // Before the first message there is nothing chat-specific to report,
+              // so fall back to whether a prompt is saved at all. Once the chat has
+              // turns, report what THIS chat is actually running.
+              (kindLocked ? active.hasMasterPrompt : modelConfig.masterPromptReady) ? (
                 <p className="rounded-lg bg-success-soft px-3 py-2 text-xs text-success">
-                  ✓ The master prompt runs automatically when this chat starts — just paste the job
-                  description. It is cached for an hour, so each job description only costs for itself.
+                  {kindLocked
+                    ? '✓ The master prompt is running in this chat — just paste the next job description.'
+                    : '✓ The master prompt runs automatically when you send the first message — just paste the job description.'}
+                  {' '}It is cached for an hour, so each job description only costs for itself.
                 </p>
               ) : (
                 <p className="rounded-lg bg-alert-soft px-3 py-2 text-xs text-alert">
-                  No master prompt has been saved yet. An Admin Lead can add one under
-                  Admin → AI Settings.
+                  {kindLocked
+                    ? 'This chat is not running a master prompt. Start a new chat to pick up the saved one.'
+                    : 'No master prompt has been saved yet. An Admin Lead can add one under Admin → AI Settings.'}
                 </p>
               )
             )}

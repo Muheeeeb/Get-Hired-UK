@@ -6,6 +6,7 @@ import { authenticate, authorizeRole, loadClientScope } from '../middleware/auth
 import { validate } from '../middleware/validate.js';
 import { buildFileKey, saveFile, deleteFile } from '../lib/storage.js';
 import { daysUntil, dateOnly, todayISO } from '../utils/dates.js';
+import { isoDate } from '../utils/zodDate.js';
 import { buildPackageMonths } from '../lib/packageTracking.js';
 import { listPackageMonths } from '../lib/packageMonths.js';
 import { encryptSecret, decryptSecret, credentialsEnabled } from '../lib/secrets.js';
@@ -15,10 +16,10 @@ router.use(authenticate);
 
 const countries = ['United Kingdom', 'Australia', 'Canada', 'New Zealand'];
 const profileSchema = z.object({
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dateOfBirth: isoDate(),
   niNumber: z.string().min(2).max(80),
   visaStatus: z.string().min(2).max(120),
-  visaExpiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  visaExpiryDate: isoDate(),
   residentialAddress: z.string().min(5).max(2000),
   postcode: z.string().min(2).max(30),
   phone: z.string().min(5).max(40),
@@ -302,7 +303,7 @@ router.get('/:id/jobs', loadClientScope, async (req, res, next) => {
 const logJobSchema = z.object({
   jobTitle: z.string().min(2).max(160),
   company: z.string().min(1).max(160),
-  applicationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  applicationDate: isoDate(),
   jobUrl: z.string().url().max(2000),
 });
 

@@ -2,9 +2,14 @@
 
 Eight requested changes, what was built for each, and how it was verified.
 
-Verification ran against a scratch PostgreSQL database (`gethired_verify`) with the full
-migration chain applied, the API booted against it, and the UI rendered in headless Chrome
-at 1280px and 500px. Server suite: **55 tests, 55 passing**.
+Verification ran against a scratch PostgreSQL database with the full migration chain applied,
+the API booted against it, and the UI rendered in headless Chrome. Server suite: **71 tests,
+71 passing**.
+
+This branch was then put through two independent reviews (requirements conformance, and an
+adversarial audit of the verification claims above). They found one regression and a set of
+correctness bugs; **§9 below lists every finding and what was done about it**. Everything in
+§1–8 was re-verified after those fixes.
 
 ---
 
@@ -130,6 +135,51 @@ to the configured portal origins only, never `*`.
 `Content-Disposition: inline` and no `X-Frame-Options`. A `.docx` returns `inline: false`.
 
 ---
+
+## 9. Independent review — findings and fixes
+
+Two reviewers went through this branch against the client's written requirements. Their
+findings, and what changed:
+
+**Fixed — regressions this branch introduced**
+
+| Finding | Fix |
+|---|---|
+| Editing **Expiry Date** on Package & Assignment stretched the final month (Month 2 became a 92-day period counted against a one-month target), corrupting every per-month figure. | Moving the end later now appends whole months, exactly as an extension does; moving it earlier drops the months that fall outside and trims the last survivor. `applyPackageBoundaries` in `lib/packageMonths.js`. |
+| **Shortening** a package returned `400 Month 6: the end date cannot be before the start date` — an operation that worked before. The rejected request had already seeded month rows and silently dropped any package-type/target change submitted with it. | Same fix. Validation now runs before any write, inside one transaction, so a rejected edit leaves nothing behind. |
+| A calendar-invalid date (`2026-02-30`) passed the regex, was rolled forward to 2 March, and produced two **genuinely overlapping months** that double-counted an application. | `isValidIsoDate` round-trips every date; `dateOnly` throws rather than rolling forward. Applied to every date field on every route. |
+| `POST /extend` ran **no validation at all** and could write an expiry before the package start, marking a client permanently expired while reporting success. | The extend path validates the resulting set, the legacy derivation can no longer emit an inverted range, and the route now returns the error instead of swallowing it. |
+| Concurrent writes (two admins, a double-clicked Save) **500'd and lost updates** — the write is delete-all-then-recreate, so both transactions collided on the unique index. Reproduced 6/6. | Every write takes a transaction-scoped Postgres advisory lock on the client. Re-tested: 12/12 concurrent PUTs return 200, and two concurrent extends correctly produce 4 months rather than 3. |
+| A stale tab submitting fewer months than are stored **silently deleted** the rest. | Rejected with an explanatory error; "Delete month" remains the only way to remove one. |
+
+**Fixed — AI Studio**
+
+| Finding | Fix |
+|---|---|
+| The banner "✓ The master prompt runs automatically" was driven by a global flag, so it claimed the prompt was running on chats that have none — including every chat created before this feature existed. | The banner now reports the chat's own state (`hasMasterPrompt`), and a chat without a snapshot picks the saved prompt up rather than silently running without one. |
+| A chat switched from Freeform to CV & Cover Letter never acquired the prompt; one switched the other way kept using it. | The snapshot is bound to the chat's current mode, not the first turn's. |
+| A PDF attached on turn 1 was replayed from extracted text on later turns. For a **scanned CV** (no extractable text) the attachment silently disappeared from turn 2 onward. It also broke the conversation-tail cache, because a turn re-rendered in a different shape invalidates the prefix. | Reference files are stored and **re-attached as native `document` blocks** on every later turn, byte-identical to the original upload. Verified: a scanned PDF is still attached, with matching bytes, on turn 2. Files are deleted with the conversation. |
+| Switching Claude model mid-chat silently discarded the 1-hour cache (caches are model-scoped) — the exact cost the client asked to avoid. | The model selector locks once a chat has started, with a note explaining why. |
+| The unused one-shot cover-letter drafter still used the old `Candidate:/Instructions:` scaffolding and put a cache breakpoint on a prompt too short to cache. | Rewritten as a plain request; the pointless breakpoint removed. |
+
+**Fixed — smaller**
+
+- Deleting the month **currently in progress** moved expiry into the past, marking the client expired and stopping their Daily Pulse, with no warning. The confirmation now says so explicitly.
+- Unsaved month edits were discarded without warning when the page refetched. The editor now holds the refetch and offers to reload.
+- Two fast clicks on different attachments could show one document under another's name.
+- Collapsing the job log unmounted the table, losing its state.
+- The "Applied today" tile captioned a server-computed (Europe/London) figure with the browser's clock.
+- The donut tooltip called the "Remaining to target" slice "applications".
+- The CSP on file responses replaced helmet's `default-src 'none'` instead of adding to it, and did not sanitise `CLIENT_ORIGIN`.
+- A mistyped expiry year silently truncated the package to the 240-month cap; now refused with a clear error.
+- During a gap between months the tracking exposes `inGap` rather than presenting a future month as if it were running.
+
+**Open — needs a decision from the client, not a code change**
+
+- **The pie chart (item 5).** The client asked for a pie of *today / this month / next month*. Today sits **inside** this month, so as pie slices they double-count. What shipped is three figures plus a donut (this month vs target) and a bar chart (per package month). Both reviewers agreed the reasoning is sound but that the substitution should be signed off rather than assumed.
+- **"Save as master" was removed** from AI Studio as collateral of removing the client/domain selectors. Restoring it needs some way to pick a client, which is what the client asked to remove. Confirm whether it is wanted.
+- **The production Claude API key** has not been rotated — the client said they would supply it.
+- **Item 8 on S3.** The `frame-ancestors` header was verified on the local storage driver. Production uses S3, where the presigned URL is served by S3 and our header code never runs; S3 sends neither `X-Frame-Options` nor `frame-ancestors`, and the presigned URL already carries `Content-Disposition: inline` + the right content type, so the viewer should work — but this has not been exercised against a real bucket.
 
 ## Deploying
 

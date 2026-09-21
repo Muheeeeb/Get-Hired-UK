@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../api/client';
 import { Spinner } from './ui';
 
@@ -105,11 +105,18 @@ export function FileViewer({ open, onClose, url, fileName, loading, error }) {
  */
 export function useFileViewer() {
   const [state, setState] = useState({ open: false, url: null, fileName: '', loading: false, error: null });
+  // Two quick clicks on different attachments resolve in arbitrary order; only
+  // the most recent request may paint, or the viewer shows one document under
+  // another's name.
+  const requestRef = useRef(0);
 
   async function openDoc(docId, fallbackName = '') {
+    const request = ++requestRef.current;
+    const isCurrent = () => requestRef.current === request;
     setState({ open: true, url: null, fileName: fallbackName, loading: true, error: null });
     try {
       const { data } = await api.get(`/files/${docId}/signed-url`);
+      if (!isCurrent()) return;
       if (data.inline) {
         setState({ open: true, url: data.url, fileName: data.fileName || fallbackName, loading: false, error: null });
         return;
@@ -124,6 +131,7 @@ export function useFileViewer() {
       a.click();
       a.remove();
     } catch (err) {
+      if (!isCurrent()) return;
       setState({
         open: true, url: null, fileName: fallbackName, loading: false,
         error: errorMessage(err, 'Could not open this document'),
@@ -131,6 +139,9 @@ export function useFileViewer() {
     }
   }
 
-  const close = () => setState({ open: false, url: null, fileName: '', loading: false, error: null });
+  const close = () => {
+    requestRef.current += 1;
+    setState({ open: false, url: null, fileName: '', loading: false, error: null });
+  };
   return { viewerProps: { ...state, onClose: close }, openDoc };
 }

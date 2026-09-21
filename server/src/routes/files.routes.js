@@ -21,9 +21,19 @@ const wantInline = (fileName) => Boolean(inlineContentType(fileName));
  * the allowance to the configured client origins only — never to `*`.
  */
 function allowPortalEmbedding(res) {
-  const origins = env.clientOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+  // Only origins that look like an origin, so a malformed CLIENT_ORIGIN cannot
+  // inject extra directives into the header.
+  const origins = env.clientOrigin
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => /^https?:\/\/[^\s;'"]+$/.test(o));
   res.removeHeader('X-Frame-Options');
-  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${origins.join(' ')}`.trim());
+  // Keep helmet's lockdown and relax only the framing rule — dropping
+  // `default-src 'none'` here would widen the policy far beyond what is needed.
+  res.setHeader(
+    'Content-Security-Policy',
+    `default-src 'none'; frame-ancestors 'self' ${origins.join(' ')}`.trim()
+  );
   // The viewer loads this cross-origin; helmet's default CORP would refuse it.
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 }

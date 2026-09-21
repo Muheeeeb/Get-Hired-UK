@@ -23,13 +23,16 @@ function Tile({ label, value, sub, tone = 'navy' }) {
   );
 }
 
-function ChartTooltip({ active, payload, suffix = '' }) {
+function ChartTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const point = payload[0];
+  const label = point.name || point.payload?.label;
+  // "Remaining to target" is a shortfall, not a count of applications.
+  const unit = point.payload?.unit || 'applications';
   return (
     <div className="rounded-lg border border-ivory-dark bg-white px-3 py-2 text-xs shadow-card">
-      <div className="font-semibold text-navy-800">{point.name || point.payload?.label}</div>
-      <div className="text-ink-soft">{point.value} {suffix || 'applications'}</div>
+      <div className="font-semibold text-navy-800">{label}</div>
+      <div className="text-ink-soft">{point.value} {unit}</div>
     </div>
   );
 }
@@ -52,8 +55,8 @@ export function ApplicationCharts({ stats, months = [], className = '' }) {
   const remaining = Math.max(0, target - applied);
 
   const donut = [
-    { name: 'Applied', value: applied, fill: APPLIED },
-    { name: 'Remaining to target', value: remaining, fill: REMAINING },
+    { name: 'Applied', value: applied, fill: APPLIED, unit: 'applications' },
+    { name: 'Remaining to target', value: remaining, fill: REMAINING, unit: 'still to go' },
   ];
   const bars = months.map((month) => ({
     label: month.label,
@@ -70,7 +73,9 @@ export function ApplicationCharts({ stats, months = [], className = '' }) {
       />
 
       <div className="grid gap-4 border-b border-ivory-dark p-6 sm:grid-cols-3">
-        <Tile label="Applied today" value={stats.today} tone="gold" sub={formatDate(new Date().toISOString())} />
+        {/* No date caption: the count is "today" in the business timezone
+            (Europe/London), which the browser's clock may disagree with. */}
+        <Tile label="Applied today" value={stats.today} tone="gold" sub="Across this client's package" />
         <Tile
           label={`This month (${current?.label || 'Month 1'})`}
           value={`${applied} / ${target}`}

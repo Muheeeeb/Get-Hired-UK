@@ -40,7 +40,9 @@ export function CollapsibleCard({
           <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      <div id={panelId} hidden={!open}>{open && children}</div>
+      {/* Kept mounted rather than unmounted so anything with its own state
+          inside (scroll position, an open row) survives a collapse. */}
+      <div id={panelId} hidden={!open}>{children}</div>
     </Card>
   );
 }

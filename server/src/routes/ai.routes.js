@@ -7,7 +7,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { defaultClaudeModel, draftCoverLetter, generateDocument, listClaudeModels } from '../lib/ai.js';
-import { tryReadFileText } from '../lib/storage.js';
+import { buildFileKey, deleteFile, readFileBuffer, saveFile, tryReadFileText } from '../lib/storage.js';
 import { env } from '../config/env.js';
 import { resolveClaudeModel } from '../lib/aiAccess.js';
 import { getMasterPrompt } from '../lib/settings.js';
@@ -49,18 +49,48 @@ const refUpload = multer({
 });
 
 /** Saved references travel with the turn that uploaded them, never rendered to the user. */
-function refsText(message) {
-  if (!Array.isArray(message?.refs)) return '';
-  return message.refs
-    .filter((ref) => ref && typeof ref.text === 'string')
-    .map((ref) => `<document name="${ref.name || 'document'}">\n${ref.text}\n</document>`)
-    .join('\n\n');
+function messageRefs(message) {
+  return Array.isArray(message?.refs) ? message.refs.filter(Boolean) : [];
 }
 
-/** What Claude sees for a stored turn: its attachments, then what was typed. */
-function historyContent(message) {
-  const refs = refsText(message);
-  return refs ? `${refs}\n\n${message.content}` : message.content;
+/**
+ * Rebuild a stored turn as the exact content blocks it was originally sent as.
+ *
+ * This matters twice over. A PDF attached on turn 1 has to come back as a native
+ * `document` block on turn 2, or a scanned CV (no extractable text) silently
+ * vanishes from the conversation and every later draft is written without it.
+ * And because prompt caching is a prefix match, a turn that is re-rendered in a
+ * different shape than it was sent invalidates the cache from that point on —
+ * so replaying it identically is what keeps the 1-hour cache actually hitting.
+ */
+export async function hydrateHistory(history) {
+  return Promise.all(history.map(async (message) => {
+    const refs = messageRefs(message);
+    if (!refs.length) return { role: message.role, content: message.content };
+
+    const blocks = [];
+    for (const ref of refs) {
+      const isPdf = String(ref.name || '').toLowerCase().endsWith('.pdf');
+      if (isPdf && ref.key) {
+        const buffer = await readFileBuffer(ref.key).catch(() => null);
+        if (buffer) {
+          blocks.push({
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') },
+            title: ref.name,
+          });
+          continue;
+        }
+      }
+      // No stored file (a pre-upgrade conversation) or not a PDF: fall back to
+      // the extracted text, which is all those turns ever had.
+      if (ref.text) {
+        blocks.push({ type: 'text', text: `<document name="${ref.name || 'document'}">\n${ref.text}\n</document>` });
+      }
+    }
+    blocks.push({ type: 'text', text: message.content });
+    return { role: message.role, content: blocks };
+  }));
 }
 
 export function parseConversationHistory(encoded) {
@@ -76,11 +106,12 @@ export function parseConversationHistory(encoded) {
   let used = 0;
   for (const message of newestFirst) {
     if (used >= MAX_HISTORY_CONTEXT_CHARS) break;
-    const full = historyContent(message);
-    const content = full.slice(0, Math.min(MAX_HISTORY_MESSAGE_CHARS, MAX_HISTORY_CONTEXT_CHARS - used));
+    const refs = messageRefs(message);
+    const refChars = refs.reduce((sum, ref) => sum + (ref.text?.length || 0), 0);
+    const content = message.content.slice(0, Math.min(MAX_HISTORY_MESSAGE_CHARS, MAX_HISTORY_CONTEXT_CHARS - used));
     if (!content) continue;
-    kept.push({ role: message.role, content });
-    used += content.length;
+    kept.push({ role: message.role, content, ...(refs.length ? { refs } : {}) });
+    used += content.length + refChars;
   }
   return kept.reverse();
 }
@@ -102,7 +133,13 @@ export function normalizeSavedMessages(raw) {
       ? message.refs
           .filter((ref) => ref && typeof ref.text === 'string')
           .slice(0, 6)
-          .map((ref) => ({ name: String(ref.name || 'document').slice(0, 255), text: ref.text }))
+          .map((ref) => ({
+            name: String(ref.name || 'document').slice(0, 255),
+            text: ref.text,
+            // The stored copy of the file, so a PDF can be re-attached natively
+            // on later turns instead of degrading to extracted text.
+            ...(typeof ref.key === 'string' && ref.key ? { key: ref.key } : {}),
+          }))
       : [];
     kept.push({
       id: typeof message.id === 'string' ? message.id : crypto.randomUUID(),
@@ -171,10 +208,17 @@ router.get('/conversations', authenticate, authorizeRole(['admin', 'employee']),
 
 router.delete('/conversations/:id', authenticate, authorizeRole(['admin', 'employee']), async (req, res, next) => {
   try {
-    const removed = await prisma.aiStudioConversation.deleteMany({
+    const existing = await prisma.aiStudioConversation.findFirst({
       where: { id: req.params.id, userId: req.user.id },
     });
-    if (!removed.count) return res.status(404).json({ error: 'AI conversation not found' });
+    if (!existing) return res.status(404).json({ error: 'AI conversation not found' });
+    await prisma.aiStudioConversation.delete({ where: { id: existing.id } });
+    // Closing a chat takes its stored reference files with it.
+    const keys = normalizeSavedMessages(existing.messages)
+      .flatMap((message) => messageRefs(message))
+      .map((ref) => ref.key)
+      .filter(Boolean);
+    await Promise.all(keys.map((key) => deleteFile(key)));
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -298,12 +342,17 @@ router.post(
         }
       }
 
-      // The master prompt is read once per chat and then frozen: a mid-chat edit
-      // to the setting must not rewrite an open conversation, and a byte-stable
-      // prefix is what keeps the hour-long cache valid across job descriptions.
-      const masterPrompt = savedConversation
-        ? (savedConversation.systemPrompt || '')
-        : (kind === 'cv_cover_letter' ? await getMasterPrompt() : '');
+      // The master prompt is frozen per chat: a mid-chat edit to the setting must
+      // not rewrite an open conversation, and a byte-stable prefix is what keeps
+      // the hour-long cache valid across job descriptions.
+      //
+      // It is bound to the CURRENT mode rather than the first turn's, so a chat
+      // that has no snapshot yet (a freeform chat switched to CV & Cover Letter,
+      // or one started before this feature existed) picks one up instead of
+      // quietly running without it, and a chat switched to freeform stops using it.
+      const masterPrompt = kind === 'cv_cover_letter'
+        ? (savedConversation?.systemPrompt || await getMasterPrompt())
+        : '';
 
       // Keep only well-formed turns, and only the recent ones so the prompt
       // cannot grow without bound over a long conversation.
@@ -315,6 +364,8 @@ router.post(
       } catch {
         return res.status(400).json({ error: 'Invalid conversation history' });
       }
+      // Re-attach stored PDFs so earlier turns are replayed exactly as they were sent.
+      history = await hydrateHistory(history);
 
       // PDFs go to Claude as native document blocks; Word and text files are
       // extracted. Both are kept so follow-ups still see the attachment.
@@ -334,12 +385,29 @@ router.post(
         model,
       });
 
+      // Keep a copy of every reference so later turns in this chat still have the
+      // document itself, not just whatever a text extractor could pull out of it.
+      const storedRefs = await Promise.all(extracted.attachments.map(async (file, index) => {
+        const source = uploaded[index];
+        let key = null;
+        if (source?.buffer) {
+          try {
+            key = buildFileKey(`ai-refs/${req.user.id}`, file.name);
+            await saveFile(key, source.buffer, source.mimetype);
+          } catch (err) {
+            // Storage is not worth failing the generation over — the turn still
+            // went to Claude with the document attached.
+            console.error('[ai] could not store reference file:', err.message);
+            key = null;
+          }
+        }
+        return { name: file.name, text: file.text || '', ...(key ? { key } : {}) };
+      }));
+
       const userMessage = {
         id: crypto.randomUUID(), role: 'user', content: prompt,
         files: uploaded.map((file) => file.originalname).slice(0, 6),
-        ...(extracted.attachments.length ? {
-          refs: extracted.attachments.map((file) => ({ name: file.name, text: file.text || '' })),
-        } : {}),
+        ...(storedRefs.length ? { refs: storedRefs } : {}),
       };
       // One honest sentence about the attachments, covering both trimmed and
       // unusable files, so a dropped reference is never invisible.
@@ -366,7 +434,11 @@ router.post(
       const saved = savedConversation
         ? await prisma.aiStudioConversation.update({
             where: { id: savedConversation.id },
-            data: { kind, model, messages },
+            data: {
+              kind, model, messages,
+              // Record the snapshot the first time this chat actually uses one.
+              ...(masterPrompt && !savedConversation.systemPrompt ? { systemPrompt: masterPrompt } : {}),
+            },
           })
         : await prisma.aiStudioConversation.create({
             data: { userId: req.user.id, kind, model, messages, systemPrompt: masterPrompt || null },

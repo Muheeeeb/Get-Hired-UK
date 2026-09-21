@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { applyPackageBoundaries } from './packageMonths.js';
 import {
   addCalendarMonths,
   buildExtensionRanges,
   buildPackageExtension,
   buildPackageMonths,
   deriveMonthRanges,
+  exceedsMonthLimit,
   validateMonthRanges,
 } from './packageTracking.js';
 
@@ -152,4 +154,95 @@ test('deriveMonthRanges still seeds legacy clients from start + expiry', () => {
     { monthIndex: 1, startDate: '2026-08-31', endDate: '2026-09-30' },
     { monthIndex: 2, startDate: '2026-10-01', endDate: '2026-10-11' },
   ]);
+});
+
+// --- regressions found in independent review -------------------------------
+
+test('a legacy record with an expiry before its start never derives an inverted month', () => {
+  // Nothing used to check start <= expiry, so such rows exist. Persisting an
+  // inverted range mirrors an impossible expiry back onto the profile and leaves
+  // the client permanently "expired".
+  const ranges = deriveMonthRanges('2026-06-01', '2026-03-15');
+  assert.equal(validateMonthRanges(ranges), null);
+  for (const range of ranges) assert.ok(range.endDate >= range.startDate);
+});
+
+test('the same package month submitted twice is rejected', () => {
+  assert.match(validateMonthRanges([
+    { monthIndex: 1, startDate: '2026-09-01', endDate: '2026-09-30' },
+    { monthIndex: 1, startDate: '2026-10-01', endDate: '2026-10-31' },
+  ]), /submitted twice/);
+});
+
+test('moving the package end later appends whole months instead of stretching the last one', () => {
+  // The Package & Assignment form used to write the new expiry straight onto the
+  // final month, turning "Month 2" into a 92-day period counted against a
+  // one-month target.
+  const { ranges } = applyPackageBoundaries([
+    { monthIndex: 1, startDate: '2026-08-31', endDate: '2026-09-30' },
+    { monthIndex: 2, startDate: '2026-10-01', endDate: '2026-10-11' },
+  ], { expiryDate: '2026-12-31' });
+
+  assert.equal(validateMonthRanges(ranges), null);
+  assert.deepEqual(ranges, [
+    { monthIndex: 1, startDate: '2026-08-31', endDate: '2026-09-30' },
+    { monthIndex: 2, startDate: '2026-10-01', endDate: '2026-10-11' },
+    { monthIndex: 3, startDate: '2026-10-12', endDate: '2026-11-11' },
+    { monthIndex: 4, startDate: '2026-11-12', endDate: '2026-12-11' },
+    { monthIndex: 5, startDate: '2026-12-12', endDate: '2026-12-31' },
+  ]);
+});
+
+test('moving the package end earlier drops the months outside it and trims the survivor', () => {
+  const { ranges } = applyPackageBoundaries([
+    { monthIndex: 1, startDate: '2026-01-01', endDate: '2026-01-31' },
+    { monthIndex: 2, startDate: '2026-02-01', endDate: '2026-02-28' },
+    { monthIndex: 3, startDate: '2026-03-01', endDate: '2026-03-31' },
+  ], { expiryDate: '2026-02-15' });
+
+  assert.deepEqual(ranges, [
+    { monthIndex: 1, startDate: '2026-01-01', endDate: '2026-01-31' },
+    { monthIndex: 2, startDate: '2026-02-01', endDate: '2026-02-15' },
+  ]);
+});
+
+test('the package end cannot be moved before the package starts', () => {
+  const result = applyPackageBoundaries(
+    [{ monthIndex: 1, startDate: '2026-05-01', endDate: '2026-05-31' }],
+    { expiryDate: '2026-04-01' },
+  );
+  assert.match(result.error, /cannot be before the package starts/);
+});
+
+test('moving the package start past Month 2 is refused rather than creating an overlap', () => {
+  const result = applyPackageBoundaries([
+    { monthIndex: 1, startDate: '2026-01-01', endDate: '2026-01-31' },
+    { monthIndex: 2, startDate: '2026-02-01', endDate: '2026-02-28' },
+  ], { startDate: '2026-02-10' });
+  assert.match(result.error, /before Month 2 begins/);
+});
+
+test('an implausibly long package is refused instead of being silently truncated', () => {
+  // deriveMonthRanges caps at 240 months; without this guard a mistyped year
+  // would seed 240 months and then mirror a far-too-early expiry back.
+  assert.equal(exceedsMonthLimit('2026-01-01', '2027-01-01'), false);
+  assert.equal(exceedsMonthLimit('2026-01-01', '2060-01-01'), true);
+});
+
+test('during a gap the tracking says so instead of presenting a future month as running', () => {
+  const result = buildPackageMonths({
+    monthlyJobTarget: 40, today: '2026-10-15',
+    storedMonths: [
+      { monthIndex: 1, startDate: '2026-09-01', endDate: '2026-09-30' },
+      { monthIndex: 2, startDate: '2026-11-01', endDate: '2026-11-30' },
+    ],
+  });
+  assert.equal(result.inGap, true);
+  assert.equal(result.current.month, 2);
+
+  const running = buildPackageMonths({
+    monthlyJobTarget: 40, today: '2026-09-15',
+    storedMonths: [{ monthIndex: 1, startDate: '2026-09-01', endDate: '2026-09-30' }],
+  });
+  assert.equal(running.inGap, false);
 });

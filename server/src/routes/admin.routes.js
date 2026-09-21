@@ -4,22 +4,23 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole, requireLead } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { todayISO, dateOnly, startOfWeek, startOfMonth, daysUntil, isoDaysFromNow } from '../utils/dates.js';
+import { todayISO, dateOnly, isValidIsoDate, startOfWeek, startOfMonth, daysUntil, isoDaysFromNow } from '../utils/dates.js';
+import { isoDate } from '../utils/zodDate.js';
 import { runDailyPulse } from '../jobs/dailyPulse.js';
 import { sendMail, brandedEmail } from '../lib/mailer.js';
 import { env } from '../config/env.js';
 import { activitySummary } from '../lib/sessions.js';
 import { PACKAGE_CHOICES } from '../config/packages.js';
 import { deleteFile } from '../lib/storage.js';
-import { buildPackageMonths, packagePeriodWhere } from '../lib/packageTracking.js';
+import { buildPackageMonths, exceedsMonthLimit, MAX_PACKAGE_MONTHS, packagePeriodWhere } from '../lib/packageTracking.js';
 import {
   deletePackageMonth,
   ensurePackageMonths,
   extendPackageMonths,
   listPackageMonths,
   listPackageMonthsByClient,
+  savePackageBoundaries,
   savePackageMonths,
-  toRanges,
 } from '../lib/packageMonths.js';
 import { MAX_MASTER_PROMPT_CHARS, setSetting, SETTING_KEYS } from '../lib/settings.js';
 
@@ -363,8 +364,8 @@ const createClientSchema = z.object({
   password: passwordSchema,
   packageType: z.string().min(2).max(120),
   // Month 1's start. Optional so existing callers keep working; it defaults to today.
-  packageStartedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').optional().or(z.literal('')),
-  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  packageStartedAt: isoDate().optional().or(z.literal('')),
+  expiryDate: isoDate(),
   monthlyJobTarget: z.number().int().min(1).max(2000).default(40),
   assignedEmployeeId: z.string().uuid().optional(),
   domains: domainsSchema.optional(),
@@ -376,6 +377,10 @@ router.post('/clients', validate(createClientSchema), async (req, res, next) => 
     const packageStartedAt = req.body.packageStartedAt || todayISO();
     if (expiryDate < packageStartedAt) {
       return res.status(400).json({ error: 'Package end date cannot be before the start date' });
+    }
+    // A mistyped year would otherwise be silently truncated to the month cap.
+    if (exceedsMonthLimit(packageStartedAt, expiryDate)) {
+      return res.status(400).json({ error: `A package cannot run for more than ${MAX_PACKAGE_MONTHS} months. Check the end date.` });
     }
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
@@ -451,8 +456,8 @@ router.get('/signups', async (req, res, next) => {
 // set package/domains later from the client edit page.
 const approveSchema = z.object({
   packageType: z.string().min(2).max(120).optional().or(z.literal('')),
-  packageStartedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').optional().or(z.literal('')),
-  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').optional().or(z.literal('')),
+  packageStartedAt: isoDate().optional().or(z.literal('')),
+  expiryDate: isoDate().optional().or(z.literal('')),
   monthlyJobTarget: z.number().int().min(1).max(2000).optional(),
   assignedEmployeeId: z.string().uuid().optional().or(z.literal('')),
   domains: domainsSchema.optional(),
@@ -473,6 +478,10 @@ router.put('/signups/:id/approve', validate(approveSchema), async (req, res, nex
     const expiryDate = rawExpiry || isoDaysFromNow(30);
     if (expiryDate < packageStartedAt) {
       return res.status(400).json({ error: 'Package end date cannot be before the start date' });
+    }
+    // A mistyped year would otherwise be silently truncated to the month cap.
+    if (exceedsMonthLimit(packageStartedAt, expiryDate)) {
+      return res.status(400).json({ error: `A package cannot run for more than ${MAX_PACKAGE_MONTHS} months. Check the end date.` });
     }
     const assignedEmployeeId = rawEmployee || undefined;
     const user = await prisma.user.findFirst({
@@ -643,8 +652,8 @@ router.put(
   validate(
     z.object({
       packageType: z.string().min(2).max(80).optional(),
-      packageStartedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      packageStartedAt: isoDate().optional(),
+      expiryDate: isoDate().optional(),
       monthlyJobTarget: z.number().int().min(1).max(500).optional(),
     })
   ),
@@ -653,13 +662,16 @@ router.put(
       const profile = await prisma.clientProfile.findUnique({ where: { id: req.params.id } });
       if (!profile) return res.status(404).json({ error: 'Client not found' });
       // The package's start and end are the first and last stored month, so a
-      // change here is applied to those months rather than to the profile
-      // columns alone — otherwise the two screens would disagree.
+      // change here re-shapes those months rather than touching the profile
+      // columns alone — otherwise the two screens would disagree. Moving the
+      // end later appends whole months; moving it earlier drops the months that
+      // fall outside. This runs BEFORE the profile write so a rejected edit
+      // leaves nothing behind.
       if (req.body.packageStartedAt || req.body.expiryDate) {
-        const ranges = toRanges(await ensurePackageMonths(profile));
-        if (req.body.packageStartedAt) ranges[0].startDate = req.body.packageStartedAt;
-        if (req.body.expiryDate) ranges[ranges.length - 1].endDate = req.body.expiryDate;
-        const saved = await savePackageMonths(profile, ranges);
+        const saved = await savePackageBoundaries(profile, {
+          startDate: req.body.packageStartedAt,
+          expiryDate: req.body.expiryDate,
+        });
         if (saved.error) return res.status(400).json({ error: saved.error });
       }
 
@@ -687,8 +699,8 @@ router.put(
 
 const monthRangeSchema = z.object({
   month: z.number().int().min(1).max(240),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  startDate: isoDate(),
+  endDate: isoDate(),
 });
 
 /** Month ranges plus the application count inside each — the admin editor's data. */
@@ -773,6 +785,7 @@ router.post(
       const profile = await prisma.clientProfile.findUnique({ where: { id: req.params.id } });
       if (!profile) return res.status(404).json({ error: 'Client not found' });
       const extension = await extendPackageMonths(profile, req.body.months);
+      if (extension.error) return res.status(400).json({ error: extension.error });
       const fresh = await prisma.clientProfile.findUnique({ where: { id: profile.id } });
       res.json({
         client: fresh,
@@ -833,16 +846,17 @@ router.delete('/clients/:id', async (req, res, next) => {
 
 router.get('/leaderboard', async (req, res, next) => {
   try {
-    const isoRe = /^\d{4}-\d{2}-\d{2}$/;
     const period = ['today', 'week', 'month'].includes(req.query.period) ? req.query.period : 'today';
 
     // Optional historical range: ?from=YYYY-MM-DD&to=YYYY-MM-DD overrides period.
     let from;
     let to = null;
     let effectivePeriod = period;
-    if (isoRe.test(req.query.from || '')) {
+    // Query params are unvalidated input: check the date is real before dateOnly
+    // (which now throws) turns a typo'd ?from= into a 500.
+    if (isValidIsoDate(req.query.from || '')) {
       from = dateOnly(req.query.from);
-      to = isoRe.test(req.query.to || '') ? dateOnly(req.query.to) : dateOnly(todayISO());
+      to = isValidIsoDate(req.query.to || '') ? dateOnly(req.query.to) : dateOnly(todayISO());
       effectivePeriod = 'range';
     } else {
       from = period === 'today' ? dateOnly(todayISO()) : period === 'week' ? startOfWeek() : startOfMonth();

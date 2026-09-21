@@ -264,18 +264,27 @@ export async function generateDocument({
   };
 }
 
+/**
+ * One-shot cover letter for a named job (the "✨ Draft with AI" action).
+ *
+ * Unlike the studio this is not a conversation, so the job details have to be
+ * stated in the message — but the instructions are written as a request rather
+ * than as labelled scaffolding, because labels like "Instructions:" are what
+ * the model used to copy back into the document.
+ */
 export async function draftCoverLetter({ clientName, jobTitle, company, domainName, masterCvText, model }) {
-  const system = 'You are an expert UK recruitment copywriter. Write a concise, professional cover letter (250-350 words, UK English). No placeholders like [Name] — use the details provided. Return only the letter body.';
   const userContent = [
-    `Candidate: ${clientName}`,
-    `Applying for: ${jobTitle} at ${company}`,
-    domainName ? `Career domain: ${domainName}` : '',
-    masterCvText ? `Master CV content:\n${masterCvText.slice(0, MAX_AI_SOURCE_CHARS)}` : '',
-  ].filter(Boolean).join('\n\n');
+    `Write a cover letter for ${clientName}, applying for the ${jobTitle} role at ${company}.`,
+    domainName ? `They are targeting ${domainName} roles.` : '',
+    'Keep it to 250-350 words in UK English, ground every claim in the CV below, and reply with the letter itself and nothing else.',
+    masterCvText ? `\nTheir CV:\n${masterCvText.slice(0, MAX_AI_SOURCE_CHARS)}` : '',
+  ].filter(Boolean).join('\n');
 
   if (env.anthropicApiKey) {
+    // No cache breakpoint: every call is a different job, so a cache entry
+    // would be written at a 2x premium and never read back.
     return generateWithClaude({
-      model, system, maxTokens: 2000, messages: [{ role: 'user', content: userContent }],
+      model, maxTokens: 2000, messages: [{ role: 'user', content: userContent }],
     });
   }
 
@@ -288,10 +297,7 @@ export async function draftCoverLetter({ clientName, jobTitle, company, domainNa
       model: env.aiModel,
       temperature: 0.7,
       max_tokens: 700,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: userContent },
-      ],
+      messages: [{ role: 'user', content: userContent }],
     });
     return { draft: completion.choices[0].message.content.trim(), source: 'openai' };
   }

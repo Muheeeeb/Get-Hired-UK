@@ -6,6 +6,7 @@ import {
   MAX_AI_PROMPT_CHARS,
   MAX_SAVED_AI_MESSAGES,
   AI_KINDS,
+  hydrateHistory,
   normaliseKind,
   normalizeSavedMessages,
   parseConversationHistory,
@@ -30,16 +31,33 @@ test('the two document modes are CV & cover letter, and freeform', () => {
   assert.equal(normaliseKind('freeform'), 'freeform');
 });
 
-test('uploaded reference text rides with its turn but never reaches the browser', () => {
+test('uploaded references ride with their turn but never reach the browser', () => {
   const saved = normalizeSavedMessages([
-    { id: 'u1', role: 'user', content: 'Use this CV', files: ['cv.pdf'], refs: [{ name: 'cv.pdf', text: 'CV BODY' }] },
+    { id: 'u1', role: 'user', content: 'Use this CV', files: ['cv.pdf'], refs: [{ name: 'cv.pdf', text: 'CV BODY', key: 'ai-refs/u/1-cv.pdf' }] },
   ]);
-  assert.deepEqual(saved[0].refs, [{ name: 'cv.pdf', text: 'CV BODY' }]);
+  assert.deepEqual(saved[0].refs, [{ name: 'cv.pdf', text: 'CV BODY', key: 'ai-refs/u/1-cv.pdf' }]);
 
   const [turn] = parseConversationHistory(JSON.stringify(saved));
-  assert.match(turn.content, /<document name="cv.pdf">/);
-  assert.match(turn.content, /CV BODY/);
-  assert.ok(turn.content.endsWith('Use this CV'));
+  assert.equal(turn.content, 'Use this CV');
+  assert.deepEqual(turn.refs, [{ name: 'cv.pdf', text: 'CV BODY', key: 'ai-refs/u/1-cv.pdf' }]);
+});
+
+test('a non-PDF reference is replayed as its extracted text, ahead of what was typed', async () => {
+  const [turn] = await hydrateHistory(parseConversationHistory(JSON.stringify([
+    { role: 'user', content: 'Use this CV', refs: [{ name: 'cv.docx', text: 'CV BODY' }] },
+  ])));
+
+  assert.equal(turn.content[0].type, 'text');
+  assert.match(turn.content[0].text, /<document name="cv.docx">/);
+  assert.match(turn.content[0].text, /CV BODY/);
+  assert.equal(turn.content[1].text, 'Use this CV');
+});
+
+test('a turn with no attachment is replayed unchanged', async () => {
+  const [turn] = await hydrateHistory(parseConversationHistory(JSON.stringify([
+    { role: 'user', content: 'Just a job description' },
+  ])));
+  assert.equal(turn.content, 'Just a job description');
 });
 
 test('follow-up history keeps a complete realistic CV and the latest instruction', () => {

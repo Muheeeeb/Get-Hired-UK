@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../api/client';
 import { Badge, Button, Card, CardHeader, Input, Skeleton } from '../components/ui';
 import { formatDate } from './files';
@@ -22,6 +22,8 @@ export function PackageMonthsEditor({ clientId, onSaved, reloadToken = 0, classN
   const [notice, setNotice] = useState(null);
 
   const apply = useCallback((data) => {
+    dirtyRef.current = false;
+    setStale(false);
     setMonths(data.months);
     setDraft(data.months.map((m) => ({ month: m.month, startDate: m.startDate, endDate: m.endDate })));
     setSummary({
@@ -42,8 +44,16 @@ export function PackageMonthsEditor({ clientId, onSaved, reloadToken = 0, classN
 
   // `reloadToken` changes whenever the parent page reloads the client — the
   // Package & Assignment form above also moves Month 1's start and the last
-  // month's end, and saving a stale draft here would silently revert it.
-  useEffect(() => { load(); }, [load, reloadToken]);
+  // month's end, so a draft built before that is stale. Refetching would throw
+  // away in-progress edits though, so when the draft is dirty the refetch is
+  // held back and the editor says the dates moved underneath it instead.
+  const dirtyRef = useRef(false);
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    if (dirtyRef.current) { setStale(true); return; }
+    setStale(false);
+    load();
+  }, [load, reloadToken]);
 
   function flash(message) {
     setNotice(message);
@@ -57,6 +67,7 @@ export function PackageMonthsEditor({ clientId, onSaved, reloadToken = 0, classN
   const dirty = months !== null && draft.some((m, i) => (
     m.startDate !== months[i]?.startDate || m.endDate !== months[i]?.endDate
   ));
+  dirtyRef.current = dirty;
 
   async function run(action, successMessage) {
     setBusy(true);
@@ -84,9 +95,21 @@ export function PackageMonthsEditor({ clientId, onSaved, reloadToken = 0, classN
   );
 
   function removeMonth(month) {
-    if (!window.confirm(
-      `Delete Month ${month}? The remaining months are renumbered and the package expiry moves to the new last month. Logged jobs are kept, but any that fall outside the remaining months stop counting towards a monthly target.`
-    )) return;
+    const target = months.find((m) => m.month === month);
+    const isLast = months[months.length - 1]?.month === month;
+    const warning = [
+      `Delete Month ${month}?`,
+      'The remaining months are renumbered and the package expiry moves to the new last month.',
+      'Logged jobs are kept, but any that fall outside the remaining months stop counting towards a monthly target.',
+      // Deleting the month in progress pulls the expiry back before today, which
+      // marks the client expired and stops their Daily Pulse email.
+      target?.status === 'current' && isLast
+        ? '\nWARNING: this is the month currently in progress and it is the last one. Deleting it will set the package expiry in the past, which marks this client as EXPIRED and stops their daily email.'
+        : target?.status === 'current'
+          ? '\nNote: this is the month currently in progress.'
+          : '',
+    ].filter(Boolean).join(' ');
+    if (!window.confirm(warning)) return;
     run(
       () => api.delete(`/admin/clients/${clientId}/package-months/${month}`),
       `Month ${month} deleted`,
@@ -185,9 +208,17 @@ export function PackageMonthsEditor({ clientId, onSaved, reloadToken = 0, classN
                 Extend package
               </Button>
             </div>
-            <div className="flex items-center gap-3">
-              {dirty && <span className="text-xs text-alert">Unsaved date changes</span>}
-              <Button type="button" onClick={save} disabled={busy || !dirty}>
+            <div className="flex flex-wrap items-center gap-3">
+              {stale && (
+                <span className="text-xs text-alert">
+                  These dates changed elsewhere on the page.{' '}
+                  <button type="button" onClick={() => { dirtyRef.current = false; load(); }} className="underline">
+                    Reload and discard my edits
+                  </button>
+                </span>
+              )}
+              {dirty && !stale && <span className="text-xs text-alert">Unsaved date changes</span>}
+              <Button type="button" onClick={save} disabled={busy || !dirty || stale}>
                 {busy ? 'Saving…' : 'Save dates'}
               </Button>
             </div>

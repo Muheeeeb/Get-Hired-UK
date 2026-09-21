@@ -39,8 +39,10 @@ export function deriveMonthRanges(packageStartedAt, expiryDate) {
   const expiry = isoDate(expiryDate);
   const ranges = [];
 
-  // 240 months is a safety cap for malformed/legacy data (20 years).
-  for (let index = 0; index < 240; index += 1) {
+  // 240 months is a safety cap for malformed/legacy data (20 years). Hitting it
+  // means the expiry is implausibly far out; `derivedFullRange` below reports
+  // that so a caller can refuse rather than silently shortening the package.
+  for (let index = 0; index < MAX_PACKAGE_MONTHS; index += 1) {
     const periodStart = index === 0 ? startDate : addDays(addCalendarMonths(startDate, index), 1);
     if (periodStart > expiry && ranges.length) break;
     const anniversaryEnd = addCalendarMonths(startDate, index + 1);
@@ -49,9 +51,24 @@ export function deriveMonthRanges(packageStartedAt, expiryDate) {
     if (endDate === expiry) break;
   }
 
-  // A legacy record whose expiry predates its recorded start still gets one safe period.
+  // A legacy record whose expiry predates its recorded start still gets one period.
   if (!ranges.length) ranges.push({ monthIndex: 1, startDate, endDate: expiry });
+
+  // Never hand back an inverted range. Legacy rows can hold an expiry recorded
+  // before the start (nothing used to check), and persisting that would fail
+  // validation on the next edit and mirror an impossible expiry onto the
+  // profile — leaving the client permanently "expired".
+  for (const range of ranges) {
+    if (range.endDate < range.startDate) range.endDate = range.startDate;
+  }
   return ranges;
+}
+
+/** True when start→expiry needs more months than a package is allowed to hold. */
+export function exceedsMonthLimit(packageStartedAt, expiryDate) {
+  const ranges = deriveMonthRanges(packageStartedAt, expiryDate);
+  return ranges.length >= MAX_PACKAGE_MONTHS
+    && ranges[ranges.length - 1].endDate < isoDate(expiryDate);
 }
 
 /** The dates an extension would pre-fill: the day after the last month, one calendar month long. */
@@ -64,6 +81,9 @@ export function nextMonthRange(previousEndDate, monthIndex) {
     endDate: addDays(addCalendarMonths(startDate, 1), -1),
   };
 }
+
+/** The safety cap on how many months one package may hold (20 years). */
+export const MAX_PACKAGE_MONTHS = 240;
 
 /** Pre-filled ranges for `months` extra months appended after `lastEndDate`. */
 export function buildExtensionRanges(lastEndDate, firstIndex, months) {
@@ -84,6 +104,8 @@ export function buildExtensionRanges(lastEndDate, firstIndex, months) {
  */
 export function validateMonthRanges(ranges) {
   if (!ranges.length) return 'At least one package month is required';
+  const indices = new Set(ranges.map((range) => range.monthIndex));
+  if (indices.size !== ranges.length) return 'The same package month was submitted twice';
   const sorted = [...ranges].sort((a, b) => a.monthIndex - b.monthIndex);
   for (const range of sorted) {
     if (range.endDate < range.startDate) {
@@ -152,9 +174,13 @@ export function buildPackageMonths({
 
   // Between two months (a deliberate gap) there is no "current" period, so fall
   // back to the next one starting — that is the month work is heading into.
-  const current = months.find((period) => period.status === 'current')
+  // `inGap` is exposed because callers must not present that month as if it were
+  // running: work logged today belongs to no month at all, by design.
+  const active = months.find((period) => period.status === 'current');
+  const current = active
     || months.find((period) => period.status === 'upcoming')
     || months[months.length - 1];
+  const inGap = !active && todayDate >= months[0].startDate && todayDate <= months[months.length - 1].endDate;
   const next = months.find((period) => period.month > current.month) || null;
   const applied = dates.length;
 
@@ -162,6 +188,7 @@ export function buildPackageMonths({
     months,
     current,
     next,
+    inGap,
     totalMonths: months.length,
     startDate: months[0].startDate,
     expiryDate: months[months.length - 1].endDate,
