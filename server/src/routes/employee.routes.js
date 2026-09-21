@@ -51,6 +51,10 @@ router.get('/clients', async (req, res, next) => {
           monthApplied: monthCount,
           packageMonth: period.tracking.current.month,
           packageMonths: period.tracking.totalMonths,
+          // Today falls in a deliberate gap between two months: work logged now
+          // belongs to no month, so "0 of 300" is correct but meaningless unless
+          // the screen says why.
+          inGap: period.tracking.inGap,
           todayApplied: todayCount,
           daysRemaining: daysUntil(c.expiryDate),
         };

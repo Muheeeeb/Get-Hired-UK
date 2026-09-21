@@ -39,6 +39,20 @@ async function hardDeleteUser(targetId, fallbackId) {
   // Collect the client's own file keys up front (deleted with their profile).
   const profile = await prisma.clientProfile.findUnique({ where: { userId: targetId } });
   const fileKeys = [];
+
+  // AI Studio reference uploads belong to the USER (an admin or employee), not
+  // to any client profile, so they are not reached by the cascade below. They
+  // are candidate CVs, so they must not outlive the account that stored them.
+  const aiConversations = await prisma.aiStudioConversation.findMany({
+    where: { userId: targetId }, select: { messages: true },
+  });
+  for (const conversation of aiConversations) {
+    for (const message of Array.isArray(conversation.messages) ? conversation.messages : []) {
+      for (const ref of Array.isArray(message?.refs) ? message.refs : []) {
+        if (ref?.key) fileKeys.push(ref.key);
+      }
+    }
+  }
   if (profile) {
     const [masters, tailored, sessions, attachments] = await Promise.all([
       prisma.masterDocument.findMany({ where: { domain: { clientId: profile.id } }, select: { fileKey: true } }),

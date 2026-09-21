@@ -4,6 +4,7 @@ import {
   addDays,
   buildExtensionRanges,
   deriveMonthRanges,
+  MAX_PACKAGE_MONTHS,
   validateMonthRanges,
 } from './packageTracking.js';
 
@@ -48,12 +49,27 @@ export function toRanges(rows) {
  * from the first one's result. It is released automatically when the
  * transaction ends, including on rollback.
  */
+class PackageMonthsRejected extends Error {
+  constructor(message) {
+    super(message);
+    this.rejection = message;
+  }
+}
+
 function withClientLock(clientId, run) {
   return prisma.$transaction(async (tx) => {
     // `$executeRaw`, not `$queryRaw`: the lock function returns void, which the
     // query path cannot deserialize into a row.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${clientId}::text, 0))`;
-    return run(tx);
+    const result = await run(tx);
+    // Returning an error would COMMIT whatever the handler already did — most
+    // importantly the months `ensureRanges` seeds. Throw instead so a rejected
+    // edit leaves the client exactly as it was.
+    if (result?.error) throw new PackageMonthsRejected(result.error);
+    return result;
+  }).catch((err) => {
+    if (err instanceof PackageMonthsRejected) return { error: err.rejection };
+    throw err;
   });
 }
 
@@ -142,8 +158,13 @@ export function applyPackageBoundaries(ranges, { startDate, expiryDate }) {
     const last = next[next.length - 1];
     if (last.endDate > expiryDate) last.endDate = expiryDate;
 
-    // Longer: append whole months until the new expiry is covered.
+    // Longer: append whole months until the new expiry is covered. Bounded,
+    // because a mistyped year here would otherwise write tens of thousands of
+    // rows and make the client's own dashboard unrenderable.
     while (next[next.length - 1].endDate < expiryDate) {
+      if (next.length >= MAX_PACKAGE_MONTHS) {
+        return { error: `A package cannot run for more than ${MAX_PACKAGE_MONTHS} months. Check the end date.` };
+      }
       const previousEnd = next[next.length - 1].endDate;
       const [added] = buildExtensionRanges(previousEnd, next.length + 1, 1);
       if (added.endDate > expiryDate) added.endDate = expiryDate;
@@ -192,6 +213,9 @@ export async function extendPackageMonths(profile, months) {
   return withClientLock(profile.id, async (tx) => {
     const existing = await ensureRanges(profile, tx);
     const last = existing[existing.length - 1];
+    if (existing.length + months > MAX_PACKAGE_MONTHS) {
+      return { error: `A package cannot run for more than ${MAX_PACKAGE_MONTHS} months.` };
+    }
     const added = buildExtensionRanges(last.endDate, last.monthIndex + 1, months);
     const ranges = [...existing, ...added];
     // Legacy rows can be malformed (an expiry recorded before the start), and

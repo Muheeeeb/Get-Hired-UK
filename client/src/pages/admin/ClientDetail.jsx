@@ -77,7 +77,6 @@ export default function ClientDetail() {
       await api.put(`/admin/clients/${id}/package`, {
         packageType: pkg.packageType,
         packageStartedAt: pkg.packageStartedAt,
-        expiryDate: pkg.expiryDate,
         monthlyJobTarget: Number(pkg.monthlyJobTarget),
       });
       await api.put(`/admin/clients/${id}/assign`, {
@@ -233,10 +232,19 @@ export default function ClientDetail() {
                   {packageChoices.map((c) => <option key={c} value={c}>{c}</option>)}
                 </Select>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Input id="pkg-start" label="Start date" type="date" value={pkg.packageStartedAt}
+                  <Input id="pkg-start" label="Start date (Month 1)" type="date" value={pkg.packageStartedAt}
                     onChange={(e) => setPkg({ ...pkg, packageStartedAt: e.target.value })} />
-                  <Input id="pkg-expiry" label="End / expiry date" type="date" min={pkg.packageStartedAt} value={pkg.expiryDate}
-                    onChange={(e) => setPkg({ ...pkg, expiryDate: e.target.value })} />
+                  {/* Read-only on purpose. The expiry IS the last month's end
+                      date; typing one here would re-cut every month boundary to
+                      a new phase and silently re-bucket logged applications.
+                      Package Months below owns it. */}
+                  <div>
+                    <span className="label-caps text-navy-800/70 mb-1.5 block">End / expiry date</span>
+                    <div className="rounded-xl border border-navy-800/10 bg-ivory px-3.5 py-2.5 text-sm text-navy-800">
+                      {formatDate(dash.expiry.expiryDate)}
+                    </div>
+                    <p className="mt-1 text-xs text-ink-soft">Set by the last package month below</p>
+                  </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Input id="pkg-target" label="Monthly target" type="number" min={1} max={500}
@@ -252,9 +260,9 @@ export default function ClientDetail() {
                 </Select>
                 <Button type="submit">Save changes</Button>
                 <p className="border-t border-ivory-dark pt-4 text-xs text-ink-soft">
-                  The start and end dates above are Month 1's start and the last month's end. Use
-                  <strong className="font-semibold text-navy-800"> Package Months</strong> below to edit
-                  any individual month, extend the package, or remove a month.
+                  The start date above is Month 1's start. Use
+                  <strong className="font-semibold text-navy-800"> Package Months</strong> below to change
+                  the end date, edit any individual month, extend the package, or remove a month.
                 </p>
               </form>
             </Card>

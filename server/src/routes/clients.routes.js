@@ -132,6 +132,7 @@ router.get('/:id/dashboard', loadClientScope, async (req, res, next) => {
       // Powers the application charts. Every figure is derived from the package
       // months above, so editing a month's dates re-shapes the charts too.
       applicationStats: {
+        inGap: packageTracking.inGap,
         today: packageTracking.appliedToday,
         total: packageTracking.totalApplications,
         currentMonth: packageTracking.current,

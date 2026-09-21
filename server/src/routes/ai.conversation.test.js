@@ -45,7 +45,7 @@ test('uploaded references ride with their turn but never reach the browser', () 
 test('a non-PDF reference is replayed as its extracted text, ahead of what was typed', async () => {
   const [turn] = await hydrateHistory(parseConversationHistory(JSON.stringify([
     { role: 'user', content: 'Use this CV', refs: [{ name: 'cv.docx', text: 'CV BODY' }] },
-  ])));
+  ])), 'user-1');
 
   assert.equal(turn.content[0].type, 'text');
   assert.match(turn.content[0].text, /<document name="cv.docx">/);
@@ -53,11 +53,35 @@ test('a non-PDF reference is replayed as its extracted text, ahead of what was t
   assert.equal(turn.content[1].text, 'Use this CV');
 });
 
-test('a turn with no attachment is replayed unchanged', async () => {
+test('every replayed turn uses block form, so the cached prefix stays byte-stable', async () => {
+  // A fresh turn is sent as content blocks. Replaying an earlier turn as a bare
+  // string would change the bytes of the prefix and cost the cache hit, so the
+  // two representations have to match.
   const [turn] = await hydrateHistory(parseConversationHistory(JSON.stringify([
     { role: 'user', content: 'Just a job description' },
-  ])));
-  assert.equal(turn.content, 'Just a job description');
+  ])), 'user-1');
+  assert.deepEqual(turn.content, [{ type: 'text', text: 'Just a job description' }]);
+});
+
+test('a reference key outside the user\'s own AI Studio folder is never opened', async () => {
+  // The key can arrive from the browser, so ownership is checked before any
+  // read: otherwise a specialist could name another client's master CV and have
+  // the server hand it to Claude, bypassing the file routes' role checks.
+  const foreign = await hydrateHistory([
+    { role: 'user', content: 'go', refs: [{ name: 'victim.pdf', text: '', key: 'masters/someone-else/abc-victim.pdf' }] },
+  ], 'user-1');
+  assert.deepEqual(foreign[0].content, [{ type: 'text', text: 'go' }]);
+
+  const otherUser = await hydrateHistory([
+    { role: 'user', content: 'go', refs: [{ name: 'x.pdf', text: '', key: 'ai-refs/another-user/abc-x.pdf' }] },
+  ], 'user-1');
+  assert.deepEqual(otherUser[0].content, [{ type: 'text', text: 'go' }]);
+
+  // A prefix that merely starts with the user id must not pass either.
+  const confusable = await hydrateHistory([
+    { role: 'user', content: 'go', refs: [{ name: 'x.pdf', text: '', key: 'ai-refs/user-1-evil/abc-x.pdf' }] },
+  ], 'user-1');
+  assert.deepEqual(confusable[0].content, [{ type: 'text', text: 'go' }]);
 });
 
 test('follow-up history keeps a complete realistic CV and the latest instruction', () => {

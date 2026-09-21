@@ -3,13 +3,13 @@
 Eight requested changes, what was built for each, and how it was verified.
 
 Verification ran against a scratch PostgreSQL database with the full migration chain applied,
-the API booted against it, and the UI rendered in headless Chrome. Server suite: **71 tests,
-71 passing**.
+the API booted against it, and the UI rendered in headless Chrome. Server suite: **74 tests, 74 passing**.
 
-This branch was then put through two independent reviews (requirements conformance, and an
-adversarial audit of the verification claims above). They found one regression and a set of
-correctness bugs; **§9 below lists every finding and what was done about it**. Everything in
-§1–8 was re-verified after those fixes.
+This branch went through **two rounds** of independent review (requirements conformance, and an
+adversarial audit of the verification claims above). Round 1 found a regression and a set of
+correctness bugs; round 2 re-checked those fixes and found four defects the fixes themselves had
+introduced — including an authorization bypass. **§9 lists every finding across both rounds and
+what was done about it.** Everything in §1–8 was re-verified afterwards.
 
 ---
 
@@ -174,12 +174,32 @@ findings, and what changed:
 - A mistyped expiry year silently truncated the package to the 240-month cap; now refused with a clear error.
 - During a gap between months the tracking exposes `inGap` rather than presenting a future month as if it were running.
 
+### Round 2 — defects introduced by the round 1 fixes
+
+Both reviewers independently found the same blockers. All are fixed and covered by tests.
+
+| Finding | Fix |
+|---|---|
+| **Authorization bypass (critical).** Storing reference files meant the server read a file by key — and for a new chat that key came from the browser's own `history` payload. An employee who gets 403 from the file routes for a client's master CV could put its key in `history` and have the server read it off disk and hand it to Claude. On S3 there was no confinement at all. | Two independent checks: `refs` are stripped from any browser-supplied history, and `hydrateHistory` opens only keys under `ai-refs/<this user's id>/`. Verified against a foreign master doc, a tailored doc, another user's folder, a traversal attempt and a prefix-confusion attempt — all refused; the user's own file still loads. |
+| **One typo wrote 95,681 month rows.** `exceedsMonthLimit` guarded client creation but not the route the admin UI actually uses, and the append loop had no ceiling. A mistyped expiry year made the *client's own dashboard* a 15 MB unrenderable payload, unrepairable from the editor. | The 240-month ceiling is enforced inside `applyPackageBoundaries` and on extend. Verified: 2200-01-01, 9999-12-31 and 2126-01-01 all return 400 with the row count unchanged, and repeated extends stop at the cap. |
+| **The wrong file was stored under a PDF's name.** `storedRefs` indexed back into the upload array, but extraction skips a non-PDF once the character budget is spent, so the arrays diverged. A `document` block declared `application/pdf` then carried plain text — which the API rejects, permanently breaking that chat. | The buffer is taken from the attachment itself; there is no index lookup. Verified with a 190k-character text file ahead of a PDF: the stored bytes match their own filename. |
+| **A chat could grow past the 32 MB request limit and die forever.** Re-attached history PDFs were budgeted by nothing, and the character budget counts `ref.text`, which is 0 for exactly the scanned PDFs the feature exists for. | One 18 MB raw ceiling for the whole request: the new turn's attachments have first claim, history gets the remainder, and the oldest degrade back to extracted text. Verified at 20 MB for six 5 MB history PDFs plus a fresh 5 MB upload. |
+| A **rejected** package edit still committed the months it had just seeded. | The transaction throws rather than returning, so a rejection rolls back. Verified: 0 rows before, 0 after. |
+| The banner lied in the **opposite** direction after the round 1 fix: a restored legacy chat was told "not running a master prompt" while the server applied one on its very next turn. | The listing now reports what the next turn will actually do, not merely what was snapshotted. Verified both directions. |
+| `default-src 'none'` added to PDF responses is historically what blocks Chrome's built-in PDF viewer, and neither reviewer could verify it either way in headless Chrome. | Reverted to `frame-ancestors` only — the form already verified working. The concern it was meant to address is handled structurally instead: `INLINE_TYPES` carries no active content type, now asserted by a test. |
+| `inGap` was added and **wired to nothing** — an employee logging 40 applications during a gap still saw "0 / 300" against a month that had not started. | Surfaced on the employee list and the dashboard stats; the client list now reads "Between package months" instead of a misleading zero. |
+| Changing the expiry re-cut every month boundary onto a new phase, silently re-bucketing logged applications, and a round-trip did not restore the original months. | The expiry field on Package & Assignment is now **read-only** — it is the last month's end date, and Package Months owns it. This matches the spec ("the Expiry Date should equal the end date of the last month and update automatically"). |
+| A replayed text-only turn was sent as a bare string where the original was a content block, which may cost the cache hit. | Every replayed turn uses block form, so the prefix is byte-identical either way. |
+| Uploaded CVs were persisted with no cleanup when a conversation was trimmed, or when a user was hard-deleted. | Both paths now reclaim the files. |
+
 **Open — needs a decision from the client, not a code change**
 
 - **The pie chart (item 5).** The client asked for a pie of *today / this month / next month*. Today sits **inside** this month, so as pie slices they double-count. What shipped is three figures plus a donut (this month vs target) and a bar chart (per package month). Both reviewers agreed the reasoning is sound but that the substitution should be signed off rather than assumed.
 - **"Save as master" was removed** from AI Studio as collateral of removing the client/domain selectors. Restoring it needs some way to pick a client, which is what the client asked to remove. Confirm whether it is wanted.
 - **The production Claude API key** has not been rotated — the client said they would supply it.
-- **Item 8 on S3.** The `frame-ancestors` header was verified on the local storage driver. Production uses S3, where the presigned URL is served by S3 and our header code never runs; S3 sends neither `X-Frame-Options` nor `frame-ancestors`, and the presigned URL already carries `Content-Disposition: inline` + the right content type, so the viewer should work — but this has not been exercised against a real bucket.
+- **Item 8 on S3.** The `frame-ancestors` header was verified on the local storage driver. Production uses S3, where the presigned URL is served by S3 and our header code never runs; S3 sends neither `X-Frame-Options` nor `frame-ancestors`, and the presigned URL already carries `Content-Disposition: inline` + the right content type, so the viewer should work. A reviewer added two cases that reasoning does not cover: a CloudFront response-headers policy injecting `X-Frame-Options` (a common hardening default), and Cloudflare R2 via `S3_ENDPOINT` handling `response-content-disposition` differently. Both collapse to one check — open a single PDF attachment through the viewer against the real bucket before calling item 8 done.
+
+- **Retention of AI Studio uploads.** Reference CVs are now stored (they have to be, or a scanned PDF is lost after the first turn). They are deleted when the conversation is closed, when a turn is trimmed out of the saved window, and when the user is hard-deleted — but there is no time-based retention policy. For a UK jobs platform holding candidate CVs that is worth an explicit decision.
 
 ## Deploying
 

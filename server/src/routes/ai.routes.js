@@ -25,6 +25,14 @@ const MAX_HISTORY_MESSAGE_CHARS = 60_000;
 const MAX_HISTORY_CONTEXT_CHARS = 240_000;
 export const MAX_SAVED_AI_MESSAGES = 60;
 const MAX_SAVED_AI_CHARS = 900_000;
+/**
+ * Total raw PDF bytes in one request, across the new turn AND everything
+ * replayed from history. A /v1/messages request may not exceed 32 MB and base64
+ * inflates by ~33%, so 18 MB raw (~24 MB encoded) leaves headroom for the
+ * conversation text. Without a shared ceiling a chat with a file on every turn
+ * grows linearly until it can never succeed again.
+ */
+export const MAX_REQUEST_PDF_BYTES = 18 * 1024 * 1024;
 
 /**
  * The two document modes the studio offers.
@@ -63,17 +71,45 @@ function messageRefs(message) {
  * different shape than it was sent invalidates the cache from that point on —
  * so replaying it identically is what keeps the 1-hour cache actually hitting.
  */
-export async function hydrateHistory(history) {
-  return Promise.all(history.map(async (message) => {
+/** Where this user's own AI Studio uploads live. Nothing else is readable. */
+export function aiRefPrefix(userId) {
+  return `ai-refs/${userId}/`;
+}
+
+/**
+ * Re-attaching a file means the server reads it off storage, so the key must
+ * never come from the caller: `refs` are stripped from browser-supplied history
+ * (see `/generate`) and, belt and braces, only keys under this user's own
+ * AI Studio folder are ever opened. Without both checks a specialist could put
+ * any storage key in `history` and have the server hand them a client's
+ * documents that the file routes would have refused them.
+ */
+function ownedRefKey(ref, userId) {
+  return typeof ref.key === 'string' && ref.key.startsWith(aiRefPrefix(userId)) ? ref.key : null;
+}
+
+export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_REQUEST_PDF_BYTES } = {}) {
+  // Newest turns keep their documents; older ones degrade to extracted text once
+  // the budget is spent, so a long chat cannot grow past the API's request limit.
+  let budget = maxPdfBytes;
+  const hydrated = [];
+  for (const message of [...history].reverse()) {
     const refs = messageRefs(message);
-    if (!refs.length) return { role: message.role, content: message.content };
+    if (!refs.length) {
+      // Block form, not a bare string: a fresh turn is sent as blocks, so
+      // replaying it as a string would change the bytes of the cached prefix.
+      hydrated.push({ role: message.role, content: [{ type: 'text', text: message.content }] });
+      continue;
+    }
 
     const blocks = [];
     for (const ref of refs) {
+      const key = ownedRefKey(ref, userId);
       const isPdf = String(ref.name || '').toLowerCase().endsWith('.pdf');
-      if (isPdf && ref.key) {
-        const buffer = await readFileBuffer(ref.key).catch(() => null);
-        if (buffer) {
+      if (isPdf && key && budget > 0) {
+        const buffer = await readFileBuffer(key).catch(() => null);
+        if (buffer && buffer.length <= budget) {
+          budget -= buffer.length;
           blocks.push({
             type: 'document',
             source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') },
@@ -82,15 +118,17 @@ export async function hydrateHistory(history) {
           continue;
         }
       }
-      // No stored file (a pre-upgrade conversation) or not a PDF: fall back to
-      // the extracted text, which is all those turns ever had.
+      // No stored file (a pre-upgrade conversation), not a PDF, or out of
+      // budget: fall back to the extracted text, which is all those turns
+      // ever had anyway.
       if (ref.text) {
         blocks.push({ type: 'text', text: `<document name="${ref.name || 'document'}">\n${ref.text}\n</document>` });
       }
     }
     blocks.push({ type: 'text', text: message.content });
-    return { role: message.role, content: blocks };
-  }));
+    hydrated.push({ role: message.role, content: blocks });
+  }
+  return hydrated.reverse();
 }
 
 export function parseConversationHistory(encoded) {
@@ -163,12 +201,18 @@ function publicMessages(messages) {
   return messages.map(({ refs, ...message }) => message);
 }
 
-function conversationPayload(conversation) {
+function conversationPayload(conversation, savedMasterPrompt = '') {
+  const kind = normaliseKind(conversation.kind);
   return {
     id: conversation.id,
-    kind: normaliseKind(conversation.kind),
+    kind,
     model: conversation.model || '',
-    hasMasterPrompt: Boolean(conversation.systemPrompt),
+    // What the NEXT turn will actually do, not merely what was snapshotted.
+    // A chat with no snapshot yet (started before this feature existed) still
+    // picks up the saved prompt, and a freeform chat runs none whatever the
+    // column holds — the banner has to say the same thing the server does.
+    hasMasterPrompt: kind === 'cv_cover_letter'
+      && Boolean(conversation.systemPrompt || savedMasterPrompt),
     messages: publicMessages(normalizeSavedMessages(conversation.messages)),
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
@@ -195,12 +239,17 @@ async function selectedModel(req, requested) {
 /** Saved AI Studio tabs are private to the signed-in admin/employee. */
 router.get('/conversations', authenticate, authorizeRole(['admin', 'employee']), async (req, res, next) => {
   try {
-    const conversations = await prisma.aiStudioConversation.findMany({
-      where: { userId: req.user.id },
-      orderBy: { updatedAt: 'desc' },
-      take: 5,
+    const [conversations, savedMasterPrompt] = await Promise.all([
+      prisma.aiStudioConversation.findMany({
+        where: { userId: req.user.id },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+      }),
+      getMasterPrompt(),
+    ]);
+    res.json({
+      conversations: conversations.reverse().map((c) => conversationPayload(c, savedMasterPrompt)),
     });
-    res.json({ conversations: conversations.reverse().map(conversationPayload) });
   } catch (err) {
     next(err);
   }
@@ -360,13 +409,13 @@ router.post(
       try {
         history = savedConversation
           ? parseConversationHistory(JSON.stringify(normalizeSavedMessages(savedConversation.messages)))
-          : parseConversationHistory(parsed.data.history);
+          // A brand-new chat's history comes from the browser, so it is untrusted:
+          // drop any attachment references it claims. Only turns the server wrote
+          // may name a stored file.
+          : parseConversationHistory(parsed.data.history).map(({ refs, ...turn }) => turn);
       } catch {
         return res.status(400).json({ error: 'Invalid conversation history' });
       }
-      // Re-attach stored PDFs so earlier turns are replayed exactly as they were sent.
-      history = await hydrateHistory(history);
-
       // PDFs go to Claude as native document blocks; Word and text files are
       // extracted. Both are kept so follow-ups still see the attachment.
       const uploaded = [...(req.files?.files || []), ...(req.files?.file || [])];
@@ -376,6 +425,13 @@ router.post(
       } catch (err) {
         return res.status(err.status || 400).json({ error: err.publicMessage || 'A reference file could not be read' });
       }
+
+      // The new turn's attachments have first claim on the request's PDF budget;
+      // history is re-attached with whatever is left, oldest degrading to text.
+      const freshPdfBytes = extracted.attachments.reduce((sum, file) => sum + (file.pdf?.length || 0), 0);
+      history = await hydrateHistory(history, req.user.id, {
+        maxPdfBytes: Math.max(0, MAX_REQUEST_PDF_BYTES - freshPdfBytes),
+      });
 
       const result = await generateDocument({
         prompt,
@@ -387,13 +443,16 @@ router.post(
 
       // Keep a copy of every reference so later turns in this chat still have the
       // document itself, not just whatever a text extractor could pull out of it.
-      const storedRefs = await Promise.all(extracted.attachments.map(async (file, index) => {
-        const source = uploaded[index];
+      // Use the buffer carried on the attachment itself. Indexing back into
+      // `uploaded` was wrong: extraction skips a non-PDF once the character
+      // budget is spent, so the two arrays diverge and a file could be stored
+      // under another file's name.
+      const storedRefs = await Promise.all(extracted.attachments.map(async (file) => {
         let key = null;
-        if (source?.buffer) {
+        if (file.pdf) {
           try {
-            key = buildFileKey(`ai-refs/${req.user.id}`, file.name);
-            await saveFile(key, source.buffer, source.mimetype);
+            key = buildFileKey(aiRefPrefix(req.user.id).slice(0, -1), file.name);
+            await saveFile(key, file.pdf, 'application/pdf');
           } catch (err) {
             // Storage is not worth failing the generation over — the turn still
             // went to Claude with the document attached.
@@ -426,11 +485,17 @@ router.post(
         id: crypto.randomUUID(), role: 'assistant', content: result.draft,
         ...(note ? { note } : {}),
       };
-      const messages = normalizeSavedMessages([
-        ...(savedConversation ? normalizeSavedMessages(savedConversation.messages) : []),
-        userMessage,
-        assistantMessage,
-      ]);
+      const previousMessages = savedConversation ? normalizeSavedMessages(savedConversation.messages) : [];
+      const messages = normalizeSavedMessages([...previousMessages, userMessage, assistantMessage]);
+
+      // Turns trimmed out of the saved window take their stored files with them,
+      // otherwise every long chat leaks blobs that nothing can ever reference.
+      const keptKeys = new Set(messages.flatMap((m) => messageRefs(m)).map((ref) => ref.key).filter(Boolean));
+      const droppedKeys = previousMessages
+        .flatMap((m) => messageRefs(m))
+        .map((ref) => ref.key)
+        .filter((key) => key && !keptKeys.has(key));
+      await Promise.all(droppedKeys.map((key) => deleteFile(key)));
       const saved = savedConversation
         ? await prisma.aiStudioConversation.update({
             where: { id: savedConversation.id },

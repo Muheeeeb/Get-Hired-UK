@@ -28,12 +28,12 @@ function allowPortalEmbedding(res) {
     .map((o) => o.trim())
     .filter((o) => /^https?:\/\/[^\s;'"]+$/.test(o));
   res.removeHeader('X-Frame-Options');
-  // Keep helmet's lockdown and relax only the framing rule — dropping
-  // `default-src 'none'` here would widen the policy far beyond what is needed.
-  res.setHeader(
-    'Content-Security-Policy',
-    `default-src 'none'; frame-ancestors 'self' ${origins.join(' ')}`.trim()
-  );
+  // Only `frame-ancestors`, deliberately. Adding `default-src 'none'` here also
+  // sets `object-src 'none'`, which is what has historically stopped Chrome
+  // rendering a PDF in its built-in viewer — and the viewer is the whole point
+  // of this route. Nothing is lost by leaving it off: INLINE_TYPES (storage.js)
+  // carries no active content type, and `nosniff` still applies.
+  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${origins.join(' ')}`.trim());
   // The viewer loads this cross-origin; helmet's default CORP would refuse it.
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 }
