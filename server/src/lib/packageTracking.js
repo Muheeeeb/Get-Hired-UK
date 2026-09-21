@@ -59,7 +59,12 @@ export function deriveMonthRanges(packageStartedAt, expiryDate) {
   // validation on the next edit and mirror an impossible expiry onto the
   // profile — leaving the client permanently "expired".
   for (const range of ranges) {
-    if (range.endDate < range.startDate) range.endDate = range.startDate;
+    if (range.endDate < range.startDate) {
+      // Silently moving a stored expiry can un-expire a client, and nobody could
+      // explain it afterwards from the record alone.
+      console.warn(`[package] clamped an inverted legacy range ${range.startDate}..${range.endDate} for a package starting ${startDate}`);
+      range.endDate = range.startDate;
+    }
   }
   return ranges;
 }

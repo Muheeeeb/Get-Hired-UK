@@ -667,7 +667,14 @@ router.put(
     z.object({
       packageType: z.string().min(2).max(80).optional(),
       packageStartedAt: isoDate().optional(),
-      expiryDate: isoDate().optional(),
+      // `expiryDate` is deliberately NOT accepted here. It is the last package
+      // month's end date, owned by the Package Months editor; setting it from
+      // this form re-cut every month boundary onto a new phase and silently
+      // moved logged applications between months. A stale browser tab running
+      // the previous build still sends it, so it is dropped rather than obeyed.
+      expiryDate: z.undefined({
+        invalid_type_error: 'The package end date is set by the last package month. Reload this page and use Package Months to change it.',
+      }).optional(),
       monthlyJobTarget: z.number().int().min(1).max(500).optional(),
     })
   ),
@@ -681,10 +688,9 @@ router.put(
       // end later appends whole months; moving it earlier drops the months that
       // fall outside. This runs BEFORE the profile write so a rejected edit
       // leaves nothing behind.
-      if (req.body.packageStartedAt || req.body.expiryDate) {
+      if (req.body.packageStartedAt) {
         const saved = await savePackageBoundaries(profile, {
           startDate: req.body.packageStartedAt,
-          expiryDate: req.body.expiryDate,
         });
         if (saved.error) return res.status(400).json({ error: saved.error });
       }

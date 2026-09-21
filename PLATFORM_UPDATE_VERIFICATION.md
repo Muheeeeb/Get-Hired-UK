@@ -3,7 +3,7 @@
 Eight requested changes, what was built for each, and how it was verified.
 
 Verification ran against a scratch PostgreSQL database with the full migration chain applied,
-the API booted against it, and the UI rendered in headless Chrome. Server suite: **77 tests, 77 passing**.
+the API booted against it, and the UI rendered in headless Chrome. Server suite: **78 tests, 78 passing**.
 
 This branch went through **three rounds** of independent review (requirements conformance, and an
 adversarial audit of the verification claims above). Round 1 found a regression and a set of
@@ -215,6 +215,26 @@ in a headless browser, and both agreed the revert is the right call: the downsid
 the headline feature silently broken in production, against no real gain on content that is
 provably inert. The test asserting `INLINE_TYPES` can never serve `html`, `svg`, `js`, `css` or
 `xml` is what actually holds that line, and should not be removed.
+
+### Round 3, second reviewer — three more residuals
+
+The second reviewer's final pass reached the same verdict on the round 2 fixes (N1–N5 closed, the
+95,681-row case gone, all six file-read payloads blocked) and raised three residuals, now fixed:
+
+| Finding | Fix |
+|---|---|
+| **The server still accepted `expiryDate`** on `PUT /clients/:id/package`. Making the field read-only moved the problem out of the UI but left it reachable by anyone calling the endpoint — including a stale browser tab running the previous build during the deploy window, which still types into the field and sends it on every save. | The endpoint now refuses `expiryDate` outright, with a message telling the admin to reload and use Package Months. Verified: a stale-tab payload is rejected and the months are untouched; the current UI payload still saves. |
+| **Orphan cleanup could delete a file a live message still referenced** — reproduced in 3 of 4 long-chat runs against the previous commit, which re-opened the "scanned CV silently vanishes" complaint by a different route. | I could not reproduce it on the current commit across 40 turns or under concurrent turns on one chat — moving the delete to *after* the write (done in the previous commit for a different reason) appears to have been the cause. Rather than rely on that, deletion is now derived from the record that was actually persisted, so a lost update or a retry cannot strip a referenced file. |
+| A reference whose stored file has gone produced **no block at all** — the attachment disappeared from the conversation with no note. | A missing file is now announced in the conversation and in the reply's note, and logged server-side. |
+
+Also added: a warning line when the legacy clamp rewrites a stored expiry date, so an un-expired
+client can be explained from the log rather than being inexplicable.
+
+**One honest limitation to carry forward.** Once a chat accumulates more attached PDFs than the
+replay budget holds, the oldest are replayed as extracted text instead of the document. That
+degradation is bounded and announced, but it does change those turns' bytes — so on a very long,
+attachment-heavy chat the 1-hour cache will stop hitting from that point. Bounded-and-visible beats
+unbounded-and-broken, but the caching promise should not be stated without that caveat.
 
 **Open — needs a decision from the client, not a code change**
 

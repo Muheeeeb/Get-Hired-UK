@@ -221,3 +221,17 @@ test('an attachment pushed out by the budget is reported, never silently dropped
   assert.deepEqual(scanned.degraded, ['scan.pdf']);
   assert.match(scanned[0].content[0].text, /no longer included/);
 });
+
+test('a reference whose stored file has gone is announced, not silently dropped', async () => {
+  // The record points at a file storage no longer has. Writing every later draft
+  // without the CV and saying nothing is the failure this whole mechanism exists
+  // to prevent, so it has to surface.
+  const gone = await hydrateHistory([
+    { role: 'user', content: 'go', refs: [{ name: 'cv.pdf', text: '', key: 'ai-refs/user-1/missing-cv.pdf' }] },
+  ], 'user-1');
+
+  assert.deepEqual(gone.degraded, ['cv.pdf']);
+  assert.match(gone[0].content[0].text, /no longer included/);
+  // Not the "too many attached files" wording — that would misdescribe the cause.
+  assert.doesNotMatch(gone[0].content[0].text, /too many attached files/);
+});

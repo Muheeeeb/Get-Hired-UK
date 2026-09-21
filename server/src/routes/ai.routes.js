@@ -122,6 +122,7 @@ export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_HISTOR
       const isPdf = String(ref.name || '').toLowerCase().endsWith('.pdf');
       let overBudget = false;
 
+      let unavailable = false;
       if (isPdf && key) {
         const buffer = budget > 0 ? await readFileBuffer(key).catch(() => null) : null;
         if (buffer && buffer.length <= budget) {
@@ -133,26 +134,36 @@ export async function hydrateHistory(history, userId, { maxPdfBytes = MAX_HISTOR
           });
           continue;
         }
-        // The file is legitimately this chat's, it just no longer fits.
-        overBudget = Boolean(buffer) || budget <= 0;
+        if (budget <= 0 || buffer) {
+          // The file is legitimately this chat's, it just no longer fits.
+          overBudget = true;
+        } else {
+          // The record points at a file that is no longer in storage. Never let
+          // that pass silently: a later draft written without the CV, with no
+          // explanation, is the exact failure re-attachment exists to prevent.
+          unavailable = true;
+          console.warn(`[ai] reference file missing from storage: ${key}`);
+        }
       }
 
       if (ref.text) {
         // Not a PDF, no stored file (a pre-upgrade conversation), or out of
         // budget: the extracted text is all those turns ever had anyway.
         blocks.push({ type: 'text', text: `<document name="${ref.name || 'document'}">\n${ref.text}\n</document>` });
-      } else if (overBudget) {
-        // A scanned PDF with nothing extractable, pushed out by the budget.
-        // Say so in the conversation rather than letting it disappear — that is
-        // exactly the failure re-attachment exists to prevent.
+      } else if (overBudget || unavailable) {
+        // A scanned PDF with nothing extractable, pushed out by the budget or no
+        // longer in storage. Say so in the conversation rather than letting it
+        // disappear without a word.
         degraded.push(ref.name);
         blocks.push({
           type: 'text',
-          text: `<document name="${ref.name || 'document'}">(This attachment is no longer included — the conversation has too many attached files. Re-upload it if it is still needed.)</document>`,
+          text: `<document name="${ref.name || 'document'}">(This attachment is no longer included${
+            overBudget ? ' — the conversation has too many attached files' : ''
+          }. Re-upload it if it is still needed.)</document>`,
         });
       }
-      // An unreadable or non-owned key contributes nothing at all: it was never
-      // legitimately part of this conversation.
+      // A non-owned key contributes nothing at all: it was never legitimately
+      // part of this conversation.
     }
     blocks.push({ type: 'text', text: message.content });
     hydrated.push({ role: message.role, content: blocks });
@@ -521,11 +532,10 @@ router.post(
       // otherwise every long chat leaks blobs that nothing can ever reference.
       // Deleted after the write below, never before — a failed save must not
       // leave the surviving record pointing at files that are already gone.
-      const keptKeys = new Set(messages.flatMap((m) => messageRefs(m)).map((ref) => ref.key).filter(Boolean));
       const droppedKeys = previousMessages
         .flatMap((m) => messageRefs(m))
         .map((ref) => ref.key)
-        .filter((key) => key && !keptKeys.has(key));
+        .filter(Boolean);
       const saved = savedConversation
         ? await prisma.aiStudioConversation.update({
             where: { id: savedConversation.id },
@@ -538,7 +548,20 @@ router.post(
         : await prisma.aiStudioConversation.create({
             data: { userId: req.user.id, kind, model, messages, systemPrompt: masterPrompt || null },
           });
-      await Promise.all(droppedKeys.map((key) => deleteFile(key)));
+      // Delete only what the PERSISTED record no longer mentions. Deriving this
+      // from the row we just wrote — rather than from what we intended to write —
+      // means a lost update or a retry can never strip a file that a surviving
+      // message still points at, which would make the attachment vanish from the
+      // chat exactly as an unreadable file does.
+      const survivingKeys = new Set(
+        normalizeSavedMessages(saved.messages)
+          .flatMap((m) => messageRefs(m))
+          .map((ref) => ref.key)
+          .filter(Boolean)
+      );
+      await Promise.all(
+        droppedKeys.filter((key) => !survivingKeys.has(key)).map((key) => deleteFile(key))
+      );
 
       res.json({
         draft: result.draft,
