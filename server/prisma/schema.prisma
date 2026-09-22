@@ -50,47 +50,47 @@ enum TailoredDocType {
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  fullName     String    @map("full_name")
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  role         Role
-  isActive     Boolean   @default(true) @map("is_active")
+  id              String         @id @default(uuid()) @db.Uuid
+  fullName        String         @map("full_name")
+  email           String         @unique
+  passwordHash    String         @map("password_hash")
+  role            Role
+  isActive        Boolean        @default(true) @map("is_active")
   // Admin-created and bootstrap accounts default to approved; self-service
   // client sign-ups are created as pending and gate login until approved.
-  approvalStatus ApprovalStatus @default(approved) @map("approval_status")
-  phone        String?
-  signupNote   String?   @map("signup_note")
-  designation  String?
+  approvalStatus  ApprovalStatus @default(approved) @map("approval_status")
+  phone           String?
+  signupNote      String?        @map("signup_note")
+  designation     String?
   // Claude model enforced for this employee. Null uses the server default.
-  aiModel      String?   @map("ai_model")
+  aiModel         String?        @map("ai_model")
   // The Admin Lead can manage other admins and audit activity/chats.
-  isLead       Boolean   @default(false) @map("is_lead")
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
+  isLead          Boolean        @default(false) @map("is_lead")
+  emailVerifiedAt DateTime?      @map("email_verified_at")
+  lastLoginAt     DateTime?      @map("last_login_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  deletedAt       DateTime?      @map("deleted_at")
 
-  clientProfile      ClientProfile?      @relation("ClientUser")
-  assignedClients    ClientProfile[]     @relation("AssignedEmployee")
-  jobApplications    JobApplication[]    @relation("EmployeeJobs")
-  masterUploads      MasterDocument[]    @relation("MasterUploader")
-  tailoredUploads    TailoredDocument[]  @relation("TailoredUploader")
-  interviewResources InterviewResource[] @relation("ResourceCreator")
-  posts              Post[]              @relation("PostAuthor")
-  credentialAccesses CredentialAccessLog[] @relation("CredentialRevealer")
-  refreshTokens      RefreshToken[]
-  passwordResets     PasswordResetToken[]
-  emailVerifications EmailVerificationToken[]
-  sessions           UserSession[]
-  sentMessages       Message[]            @relation("MessageSender")
-  conversationsCreated Conversation[]     @relation("ConversationCreator")
-  conversationsAsClient Conversation[]    @relation("ConversationClient")
-  conversationsAssigned Conversation[]    @relation("ConversationAssignee")
-  interviewSessionsCreated InterviewSession[] @relation("SessionCreator")
-  interviewSessionsAssigned InterviewSession[] @relation("SessionAssignee")
-  aiStudioConversations AiStudioConversation[]
+  clientProfile             ClientProfile?           @relation("ClientUser")
+  assignedClients           ClientProfile[]          @relation("AssignedEmployee")
+  jobApplications           JobApplication[]         @relation("EmployeeJobs")
+  masterUploads             MasterDocument[]         @relation("MasterUploader")
+  tailoredUploads           TailoredDocument[]       @relation("TailoredUploader")
+  interviewResources        InterviewResource[]      @relation("ResourceCreator")
+  posts                     Post[]                   @relation("PostAuthor")
+  credentialAccesses        CredentialAccessLog[]    @relation("CredentialRevealer")
+  refreshTokens             RefreshToken[]
+  passwordResets            PasswordResetToken[]
+  emailVerifications        EmailVerificationToken[]
+  sessions                  UserSession[]
+  sentMessages              Message[]                @relation("MessageSender")
+  conversationsCreated      Conversation[]           @relation("ConversationCreator")
+  conversationsAsClient     Conversation[]           @relation("ConversationClient")
+  conversationsAssigned     Conversation[]           @relation("ConversationAssignee")
+  interviewSessionsCreated  InterviewSession[]       @relation("SessionCreator")
+  interviewSessionsAssigned InterviewSession[]       @relation("SessionAssignee")
+  aiStudioConversations     AiStudioConversation[]
 
   @@map("users")
 }
@@ -98,19 +98,23 @@ model User {
 /// Private AI Studio workspaces. Each admin/employee owns their own saved tabs;
 /// messages are JSON because they are model turns rather than team-chat records.
 model AiStudioConversation {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  clientId  String?  @map("client_id") @db.Uuid
-  domainId  String?  @map("domain_id") @db.Uuid
-  kind      String   @default("cv")
-  model     String?
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  clientId     String?  @map("client_id") @db.Uuid
+  domainId     String?  @map("domain_id") @db.Uuid
+  kind         String   @default("cv")
+  model        String?
+  /// Thinking effort this chat runs at. Frozen per chat like the model: changing
+  /// it mid-conversation invalidates the cached prefix, so every later job
+  /// description would pay full price again.
+  effort       String?
   // Snapshot of the admin master prompt taken when this chat was opened, so a
   // later edit to the setting never rewrites an in-flight conversation (and the
   // cached prompt prefix stays byte-stable for the whole chat).
-  systemPrompt String? @map("system_prompt")
-  messages  Json     @default("[]")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  systemPrompt String?  @map("system_prompt")
+  messages     Json     @default("[]")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   client ClientProfile? @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -207,17 +211,17 @@ model ConversationRead {
 
 /// Scheduled interview-prep sessions, visible to the client and the assigned employee.
 model InterviewSession {
-  id                 String    @id @default(uuid()) @db.Uuid
-  clientId           String    @map("client_id") @db.Uuid
+  id                 String   @id @default(uuid()) @db.Uuid
+  clientId           String   @map("client_id") @db.Uuid
   title              String
-  scheduledAt        DateTime  @map("scheduled_at")
-  joinLink           String?   @map("join_link")
+  scheduledAt        DateTime @map("scheduled_at")
+  joinLink           String?  @map("join_link")
   notes              String?
-  fileKey            String?   @map("file_key")
-  fileName           String?   @map("file_name")
-  assignedEmployeeId String?   @map("assigned_employee_id") @db.Uuid
-  createdById        String    @map("created_by") @db.Uuid
-  createdAt          DateTime  @default(now()) @map("created_at")
+  fileKey            String?  @map("file_key")
+  fileName           String?  @map("file_name")
+  assignedEmployeeId String?  @map("assigned_employee_id") @db.Uuid
+  createdById        String   @map("created_by") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
 
   client           ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
   assignedEmployee User?         @relation("SessionAssignee", fields: [assignedEmployeeId], references: [id])
@@ -247,15 +251,15 @@ model ClientProfile {
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
-  user             User             @relation("ClientUser", fields: [userId], references: [id])
-  assignedEmployee User?            @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
-  domains            Domain[]
-  packageMonths      PackageMonth[]
-  jobApplications    JobApplication[]
-  dailyPulseLogs     DailyPulseLog[]
-  interviewSessions  InterviewSession[]
-  interviewResources InterviewResource[]
-  credentials        ClientCredential[]
+  user                  User                   @relation("ClientUser", fields: [userId], references: [id])
+  assignedEmployee      User?                  @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
+  domains               Domain[]
+  packageMonths         PackageMonth[]
+  jobApplications       JobApplication[]
+  dailyPulseLogs        DailyPulseLog[]
+  interviewSessions     InterviewSession[]
+  interviewResources    InterviewResource[]
+  credentials           ClientCredential[]
   aiStudioConversations AiStudioConversation[]
 
   @@map("client_profiles")
@@ -338,8 +342,8 @@ model Domain {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  client          ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  masterDocuments MasterDocument[]
+  client                ClientProfile          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  masterDocuments       MasterDocument[]
   aiStudioConversations AiStudioConversation[]
 
   @@map("domains")

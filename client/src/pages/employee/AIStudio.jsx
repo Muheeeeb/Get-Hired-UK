@@ -14,6 +14,18 @@ const KINDS = [
   { key: 'freeform', label: 'Freeform', hint: 'An open chat with Claude' },
 ];
 
+/**
+ * How hard Claude thinks before answering — the API's own `effort`, exposed the
+ * way the Claude apps expose extended thinking. Admin-only: thinking tokens are
+ * billed, so a specialist cannot raise the platform's running cost on their own.
+ */
+const EFFORTS = [
+  { key: 'low', label: 'Low — quickest, cheapest' },
+  { key: 'medium', label: 'Medium' },
+  { key: 'high', label: 'High (default)' },
+  { key: 'xhigh', label: 'Extra high — slowest, most thorough' },
+];
+
 const MAX_TABS = 5;
 const MAX_FILES = 6;
 const MAX_PROMPT_CHARS = 50_000;
@@ -29,6 +41,7 @@ function newSession(n) {
     // before the setting existed has none, and the banner must not claim it does.
     hasMasterPrompt: false,
     model: '',
+    effort: 'high',
     messages: [], input: '', files: [],
     busy: false, error: null, exportBusyId: null,
   };
@@ -57,6 +70,7 @@ export default function AIStudio() {
   const [sessions, setSessions] = useState(() => [newSession(1)]);
   const [modelConfig, setModelConfig] = useState({
     models: [], selectedModel: '', canChoose: false, configured: true, masterPromptReady: true,
+    efforts: EFFORTS.map((e) => e.key), selectedEffort: 'high', canChooseEffort: false,
   });
   const [activeId, setActiveId] = useState('draft-1');
   const [restoring, setRestoring] = useState(true);
@@ -72,6 +86,9 @@ export default function AIStudio() {
         model: config.canChoose
           ? (session.model || config.selectedModel || config.models?.[0]?.id || '')
           : (config.selectedModel || config.models?.[0]?.id || ''),
+        effort: config.canChooseEffort
+          ? (session.effort || config.selectedEffort || 'high')
+          : (config.selectedEffort || 'high'),
       })));
     }).catch(() => setModelConfig((current) => ({ ...current, configured: false })));
 
@@ -161,6 +178,7 @@ export default function AIStudio() {
       fd.append('prompt', text);
       fd.append('history', JSON.stringify(history));
       if (s.model) fd.append('model', s.model);
+      if (s.effort) fd.append('effort', s.effort);
       if (s.conversationId) fd.append('conversationId', s.conversationId);
       outgoing.forEach((f) => fd.append('files', f));
       const { data } = await api.post('/ai/generate', fd);
@@ -326,6 +344,24 @@ export default function AIStudio() {
                 <p className="mt-1 text-xs text-ink-soft">Set by your administrator</p>
               </div>
             )}
+            {modelConfig.canChooseEffort && (
+              <div>
+                {/* Locked with the model for the same reason: changing effort
+                    mid-chat invalidates the cached prefix, so every later job
+                    description would pay full price again. */}
+                <Select id="ai-effort" label="Thinking" value={active.effort} disabled={kindLocked}
+                  onChange={(e) => updateActive({ effort: e.target.value })}>
+                  {EFFORTS.map((effort) => (
+                    <option key={effort.key} value={effort.key}>{effort.label}</option>
+                  ))}
+                </Select>
+                <p className="mt-1 text-xs text-ink-soft">
+                  {kindLocked
+                    ? 'Fixed for this chat — start a new chat to change how hard Claude thinks.'
+                    : 'Higher settings think longer before answering, and cost more.'}
+                </p>
+              </div>
+            )}
             {!modelConfig.configured && (
               <p className="rounded-lg bg-alert-soft px-3 py-2 text-xs text-alert">
                 Claude is not connected yet. Add ANTHROPIC_API_KEY on the server before going live.
@@ -402,9 +438,32 @@ export default function AIStudio() {
                 <div key={m.id} className="flex gap-3">
                   <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gold-100 text-sm">✨</span>
                   <div className="min-w-0 flex-1">
+                    {m.thinking && (
+                      // Collapsed by default: it is Claude's working, not the
+                      // document, and it never reaches a PDF or Word export.
+                      <details className="mb-1.5 rounded-xl border border-ivory-dark bg-ivory/60 px-3 py-2">
+                        <summary className="cursor-pointer list-none text-xs font-semibold text-ink-soft hover:text-navy-800">
+                          ▸ Thought process
+                        </summary>
+                        <div className="mt-2 border-t border-ivory-dark pt-2 text-xs leading-relaxed text-ink-soft">
+                          <MessageText text={m.thinking} />
+                        </div>
+                      </details>
+                    )}
                     <div className="rounded-2xl rounded-tl-sm border border-ivory-dark bg-white px-4 py-3 text-ink">
                       <MessageText text={m.content} />
                     </div>
+                    {m.sources?.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-ink-soft">Sources:</span>
+                        {m.sources.map((source) => (
+                          <a key={source.url} href={source.url} target="_blank" rel="noreferrer noopener"
+                            className="max-w-[220px] truncate rounded-md bg-ivory px-2 py-0.5 text-[11px] text-ink-soft underline decoration-dotted hover:text-navy-800">
+                            {source.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     {m.note && <p className="mt-1.5 rounded-lg bg-alert-soft px-3 py-1.5 text-xs text-alert">{m.note}</p>}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <button type="button" onClick={() => copyMsg(m)}
