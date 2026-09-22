@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAttachmentBlocks, buildClaudeRequest } from './ai.js';
+import { buildAttachmentBlocks, buildClaudeRequest, resolveEffort } from './ai.js';
 
 test('Claude request uses fields supported by Sonnet 5', () => {
   const request = buildClaudeRequest({
@@ -11,10 +11,95 @@ test('Claude request uses fields supported by Sonnet 5', () => {
 
   assert.deepEqual(request, {
     model: 'claude-sonnet-5',
-    messages: [{ role: 'user', content: 'Hello' }],
     max_tokens: 100,
+    // Thinking is on by default, as it is in the Claude apps — and asked for
+    // explicitly, because omitting it means "no thinking" on this model.
+    thinking: { type: 'adaptive', display: 'summarized' },
+    output_config: { effort: 'high' },
+    messages: [{ role: 'user', content: 'Hello' }],
   });
+  // Both were removed from the current models and 400 rather than being ignored.
   assert.equal('temperature' in request, false);
+  assert.equal('budget_tokens' in request.thinking, false);
+});
+
+test('the reasoning summary is asked for — the default would return empty thinking', () => {
+  const request = buildClaudeRequest({
+    model: 'claude-opus-5', messages: [], maxTokens: 10,
+  });
+  assert.equal(request.thinking.display, 'summarized');
+});
+
+test('effort rides inside output_config, where the API reads it', () => {
+  const request = buildClaudeRequest({
+    model: 'claude-opus-5', messages: [], maxTokens: 10, effort: 'low',
+  });
+  assert.deepEqual(request.output_config, { effort: 'low' });
+  assert.equal('effort' in request, false);
+});
+
+test('models without adaptive thinking are left exactly as they were', () => {
+  // Haiku 4.5 and the Claude 3 line take the retired budget_tokens form, so
+  // sending either field would fail the request outright.
+  for (const model of ['claude-haiku-4-5', 'claude-3-5-sonnet-20241022']) {
+    const request = buildClaudeRequest({ model, messages: [], maxTokens: 10, effort: 'xhigh' });
+    assert.equal('thinking' in request, false, model);
+    assert.equal('output_config' in request, false, model);
+  }
+});
+
+test('xhigh is downgraded on models that never had it, not sent and rejected', () => {
+  assert.equal(resolveEffort('claude-sonnet-4-6', 'xhigh'), 'high');
+  assert.equal(resolveEffort('claude-opus-4-6', 'xhigh'), 'high');
+  assert.equal(resolveEffort('claude-opus-5', 'xhigh'), 'xhigh');
+  assert.equal(resolveEffort('claude-sonnet-5', 'xhigh'), 'xhigh');
+});
+
+test('an unrecognised effort falls back to the default instead of failing the turn', () => {
+  assert.equal(resolveEffort('claude-opus-5', 'turbo'), 'high');
+  assert.equal(resolveEffort('claude-opus-5', undefined), 'high');
+});
+
+test('a model newer than this code keeps the newest tools, not the oldest', () => {
+  // The dropdown is filled from /v1/models, so ids this file has never seen do
+  // turn up. Guessing "old" for them would quietly downgrade the whole studio.
+  const request = buildClaudeRequest({
+    model: 'claude-opus-7-2', messages: [], maxTokens: 10, webTools: true, effort: 'xhigh',
+  });
+  assert.equal(request.tools[0].type, 'web_search_20260209');
+  assert.deepEqual(request.output_config, { effort: 'xhigh' });
+});
+
+test('web tools are declared — without them Claude cannot browse at all', () => {
+  const request = buildClaudeRequest({
+    model: 'claude-opus-5', messages: [], maxTokens: 10, webTools: true,
+  });
+  assert.deepEqual(request.tools.map((t) => t.name), ['web_search', 'web_fetch']);
+  assert.deepEqual(request.tools.map((t) => t.type), ['web_search_20260209', 'web_fetch_20260209']);
+});
+
+test('older models get the tool variants they actually support', () => {
+  const request = buildClaudeRequest({
+    model: 'claude-haiku-4-5', messages: [], maxTokens: 10, webTools: true,
+  });
+  assert.deepEqual(request.tools.map((t) => t.type), ['web_search_20250305', 'web_fetch_20250910']);
+});
+
+test('no tools are declared unless the caller asks for them', () => {
+  const request = buildClaudeRequest({ model: 'claude-opus-5', messages: [], maxTokens: 10 });
+  assert.equal('tools' in request, false);
+});
+
+test('the tool list is byte-identical between turns, so the cached prefix survives', () => {
+  // tools render ahead of system; anything varying here costs the master-prompt
+  // cache on every single turn of every chat.
+  const first = buildClaudeRequest({
+    model: 'claude-opus-5', messages: [{ role: 'user', content: 'a' }], maxTokens: 10, webTools: true,
+  });
+  const second = buildClaudeRequest({
+    model: 'claude-opus-5', messages: [{ role: 'user', content: 'b' }], maxTokens: 10, webTools: true,
+  });
+  assert.equal(JSON.stringify(first.tools), JSON.stringify(second.tools));
 });
 
 test('no system prompt is sent unless an admin saved a master prompt', () => {

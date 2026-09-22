@@ -15,6 +15,26 @@ const CACHE_1H = { type: 'ephemeral', ttl: '1h' };
  */
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
 /**
+ * Effort levels the studio offers, cheapest first.
+ *
+ * `max` is deliberately absent. These calls are not streamed, so the response
+ * headers only arrive once generation is finished, and a `max`-effort turn on a
+ * long CV can sit past the 5-minute HTTP header timeout and fail outright.
+ * `xhigh` is already more deliberation than a CV or cover letter needs.
+ */
+export const AI_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
+export const DEFAULT_AI_EFFORT = 'high';
+
+/** How many web searches/fetches one turn may make. Each search is billed. */
+const WEB_TOOL_MAX_USES = 6;
+/**
+ * A server tool can hand the turn back with `pause_turn` before Claude has
+ * finished speaking. Four resumes is far more than a job-description lookup
+ * needs and bounds what one /generate request can cost.
+ */
+const MAX_SERVER_TOOL_ROUNDS = 4;
+
+/**
  * A /v1/messages request may not exceed 32 MB, and base64 inflates bytes by ~33%,
  * so the raw PDF budget for one turn is held well under that. A document beyond
  * the budget still reaches Claude — as its extracted text rather than natively.
@@ -100,15 +120,105 @@ export async function defaultClaudeModel() {
 }
 
 /**
+ * Family and version behind a model id — `claude-opus-4-8` → `{opus, 4.8}`.
+ *
+ * An id this code has never seen returns null, and every check below then treats
+ * it as NEWER than anything listed here. The model list is fetched live from
+ * /v1/models, so a model released after this was written must pick up the better
+ * tools rather than silently falling back to the older ones.
+ */
+function modelCapabilities(model) {
+  const id = String(model || '');
+  // Ids up to Claude 3 put the version before the family (`claude-3-5-sonnet-…`)
+  // and predate every feature below, so classify them outright.
+  if (/^claude-[0-3](?:[-.]|$)/.test(id)) return { family: 'legacy', version: 0 };
+  const match = /^claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:[-.](\d+))?/.exec(id);
+  if (!match) return null;
+  const [, family, major, minor] = match;
+  return { family, version: Number(`${major}.${minor || 0}`) };
+}
+
+/** Web search and web fetch with dynamic filtering: Opus/Sonnet 4.6+ and the Fable line. */
+function supportsModernWebTools(model) {
+  const caps = modelCapabilities(model);
+  if (!caps) return true;
+  if (caps.family === 'fable' || caps.family === 'mythos') return true;
+  if (caps.family === 'opus' || caps.family === 'sonnet') return caps.version >= 4.6;
+  return false;
+}
+
+/**
+ * Adaptive thinking and `output_config.effort`: Opus/Sonnet 4.6+ and the Fable
+ * line. Haiku 4.5 and older take the retired `budget_tokens` form instead, so
+ * they are left exactly as they were — no thinking, no effort — rather than
+ * being sent a parameter that would 400.
+ */
+function supportsAdaptiveThinking(model) {
+  return supportsModernWebTools(model);
+}
+
+/** `xhigh` arrived with Opus 4.7; Opus 4.6 and Sonnet 4.6 stop at `high`. */
+function supportsXhighEffort(model) {
+  const caps = modelCapabilities(model);
+  if (!caps) return true;
+  if (caps.family === 'fable' || caps.family === 'mythos') return true;
+  if (caps.family === 'opus') return caps.version >= 4.7;
+  if (caps.family === 'sonnet') return caps.version >= 5;
+  return false;
+}
+
+/**
+ * The web tools, in a shape that is identical on every request of a chat.
+ *
+ * `tools` renders ahead of `system` in the cached prefix, so anything that
+ * varied here — a changing `max_uses`, a reordered list — would throw away the
+ * master-prompt cache on every single turn.
+ */
+function webToolsFor(model) {
+  const modern = supportsModernWebTools(model);
+  return [
+    {
+      type: modern ? 'web_search_20260209' : 'web_search_20250305',
+      name: 'web_search',
+      max_uses: WEB_TOOL_MAX_USES,
+    },
+    {
+      type: modern ? 'web_fetch_20260209' : 'web_fetch_20250910',
+      name: 'web_fetch',
+      max_uses: WEB_TOOL_MAX_USES,
+    },
+  ];
+}
+
+export function normaliseEffort(effort) {
+  return AI_EFFORTS.includes(effort) ? effort : DEFAULT_AI_EFFORT;
+}
+
+/** The effort to ask for, downgraded rather than rejected on models without `xhigh`. */
+export function resolveEffort(model, effort) {
+  const wanted = AI_EFFORTS.includes(effort) ? effort : DEFAULT_AI_EFFORT;
+  if (wanted === 'xhigh' && !supportsXhighEffort(model)) return 'high';
+  return wanted;
+}
+
+/**
  * Build the /v1/messages body.
  *
  * `system` is omitted entirely unless the admin has saved a master prompt — with
  * no system prompt Claude behaves exactly as it does in the Pro/Max apps, which
  * is what the team asked for. A hand-written "you are a CV writer" preamble is
  * what used to make it echo the instructions back into the document.
+ *
+ * `webTools` and `thinking` are what close the remaining gap with the Pro/Max
+ * apps: over the raw API Claude gets no tools unless they are declared, which is
+ * why the studio used to answer "I can't browse the internet" to a question the
+ * browser answered from a live search.
  */
-export function buildClaudeRequest({ model, system, messages, maxTokens, cacheSystem = true }) {
-  const body = { model, max_tokens: maxTokens, messages };
+export function buildClaudeRequest({
+  model, system, messages, maxTokens, cacheSystem = true, webTools = false, effort,
+}) {
+  const body = { model, max_tokens: maxTokens };
+  if (webTools) body.tools = webToolsFor(model);
   if (system) {
     body.system = [{
       type: 'text',
@@ -119,6 +229,14 @@ export function buildClaudeRequest({ model, system, messages, maxTokens, cacheSy
       ...(cacheSystem ? { cache_control: CACHE_1H } : {}),
     }];
   }
+  if (supportsAdaptiveThinking(model)) {
+    // `summarized` is an opt-in: the default returns thinking blocks with empty
+    // text, which would show the user an empty "Thought process" panel.
+    body.thinking = { type: 'adaptive', display: 'summarized' };
+    // Note `effort` lives inside output_config — a top-level `effort` is ignored.
+    body.output_config = { effort: resolveEffort(model, effort) };
+  }
+  body.messages = messages;
   // Newer Claude models (including Sonnet 5) reject `temperature` rather than
   // silently ignoring it, so keep the request to universally supported fields.
   return body;
@@ -139,35 +257,108 @@ function withConversationCache(messages) {
   return copy;
 }
 
-async function generateWithClaude({ model, system, messages, maxTokens, cacheConversation = false }) {
+const WEB_RESULT_TYPES = new Set(['web_search_tool_result', 'web_fetch_tool_result']);
+
+/** The pages Claude actually opened, so a reply can show its working as claude.ai does. */
+function collectSources(blocks) {
+  const seen = new Map();
+  for (const block of blocks) {
+    if (block.type === 'web_search_tool_result' && Array.isArray(block.content)) {
+      for (const item of block.content) {
+        if (item?.url && !seen.has(item.url)) {
+          seen.set(item.url, { url: item.url, title: String(item.title || item.url).slice(0, 200) });
+        }
+      }
+    }
+    if (block.type === 'web_fetch_tool_result' && block.content?.url && !seen.has(block.content.url)) {
+      const { url, content } = block.content;
+      seen.set(url, { url, title: String(content?.title || url).slice(0, 200) });
+    }
+  }
+  return [...seen.values()].slice(0, 12);
+}
+
+/**
+ * Server tools do not throw.
+ *
+ * A failed search comes back as HTTP 200 with an error object where the results
+ * list would be, so nothing upstream notices — the reply just quietly stops
+ * being grounded in anything. Pull the code out so the turn can say so.
+ */
+function webToolErrorCode(blocks) {
+  for (const block of blocks) {
+    const content = WEB_RESULT_TYPES.has(block.type) ? block.content : null;
+    if (content && !Array.isArray(content) && content.error_code) return String(content.error_code);
+  }
+  return null;
+}
+
+async function generateWithClaude({
+  model, system, messages, maxTokens, cacheConversation = false, webTools = false, effort,
+}) {
   const resolvedModel = model || await defaultClaudeModel();
-  const result = await anthropicJson('/v1/messages', {
-    method: 'POST',
-    body: JSON.stringify(buildClaudeRequest({
-      model: resolvedModel,
-      system,
-      // Only worth a breakpoint when the prefix will be sent again. A one-shot
-      // call would pay the 2x cache-write premium and never read it back.
-      messages: cacheConversation ? withConversationCache(messages) : messages,
-      maxTokens,
-    })),
-  });
-  const draft = (result.content || [])
+  // Only worth a breakpoint when the prefix will be sent again. A one-shot
+  // call would pay the 2x cache-write premium and never read it back.
+  let convo = cacheConversation ? withConversationCache(messages) : messages;
+  const blocks = [];
+  const usage = {
+    inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0,
+  };
+  let result = null;
+
+  // A turn that uses a server tool can come back `pause_turn`, mid-sentence, with
+  // the work so far. Resume it by replaying the partial assistant turn: the
+  // cached prefix is untouched, so a resume is charged for the new blocks only.
+  for (let round = 0; round < MAX_SERVER_TOOL_ROUNDS; round += 1) {
+    result = await anthropicJson('/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify(buildClaudeRequest({
+        model: resolvedModel, system, messages: convo, maxTokens, webTools, effort,
+      })),
+    });
+    const content = result.content || [];
+    blocks.push(...content);
+    usage.inputTokens += result.usage?.input_tokens ?? 0;
+    usage.outputTokens += result.usage?.output_tokens ?? 0;
+    usage.cacheCreationInputTokens += result.usage?.cache_creation_input_tokens ?? 0;
+    usage.cacheReadInputTokens += result.usage?.cache_read_input_tokens ?? 0;
+    if (result.stop_reason !== 'pause_turn') break;
+    convo = [...convo, { role: 'assistant', content }];
+  }
+
+  const draft = blocks
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
     .trim();
+  // Kept for display only, never replayed: a thinking block is bound to the
+  // response that produced it, so the stored summary is text about the reply,
+  // not a block that could be sent back as one.
+  const thinking = blocks
+    .filter((block) => block.type === 'thinking')
+    .map((block) => block.thinking)
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+
+  if (!draft && result?.stop_reason === 'refusal') {
+    throw Object.assign(new Error('Claude declined this request'), {
+      status: 400,
+      publicMessage: 'Claude declined to answer this request. Rephrase it and try again.',
+    });
+  }
   if (!draft) throw Object.assign(new Error('Claude returned an empty response'), { status: 502 });
+
   return {
     draft,
+    thinking,
+    sources: collectSources(blocks),
+    searchErrorCode: webToolErrorCode(blocks),
+    // The reply stopped at the token ceiling, so it is cut off mid-document.
+    truncated: result?.stop_reason === 'max_tokens',
     source: 'claude',
     model: result.model || resolvedModel,
-    usage: {
-      inputTokens: result.usage?.input_tokens ?? 0,
-      outputTokens: result.usage?.output_tokens ?? 0,
-      cacheCreationInputTokens: result.usage?.cache_creation_input_tokens ?? 0,
-      cacheReadInputTokens: result.usage?.cache_read_input_tokens ?? 0,
-    },
+    usage,
   };
 }
 
@@ -211,9 +402,20 @@ export function buildAttachmentBlocks(attachments = []) {
  * `prompt` is passed through untouched — no "Instructions:" labels, no injected
  * candidate/domain headers. Whatever the specialist types is what Claude sees,
  * which is why the reply no longer contains the prompt itself.
+ *
+ * Web search, web fetch and adaptive thinking are all on, which is what makes a
+ * studio answer match the one the same question gets in the Claude apps.
+ *
+ * The one-shot `draftCoverLetter` below gets no web tools: it runs in bulk off a
+ * CV the server already holds, so a search per letter would add cost and latency
+ * to every application without adding anything to write with. It does still
+ * think — on Sonnet 5, the configured default, omitting `thinking` ran adaptive
+ * thinking anyway, and the alternative (sending `disabled`) is documented to
+ * leak `<thinking>` tags into the visible reply, which in a cover letter is
+ * worse than the tokens it would save.
  */
 export async function generateDocument({
-  prompt, masterPrompt = '', attachments = [], history = [], model,
+  prompt, masterPrompt = '', attachments = [], history = [], model, effort,
 }) {
   const attachmentBlocks = buildAttachmentBlocks(attachments);
   const skippedFiles = attachmentBlocks.skipped || [];
@@ -230,6 +432,10 @@ export async function generateDocument({
       maxTokens: 16_000,
       messages,
       cacheConversation: true,
+      // The studio is the surface that is meant to feel like claude.ai, so it
+      // gets the same live-web grounding and the same visible reasoning.
+      webTools: true,
+      effort,
     });
     return { ...result, skippedFiles };
   }

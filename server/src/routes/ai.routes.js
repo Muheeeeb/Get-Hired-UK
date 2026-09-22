@@ -7,7 +7,10 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, authorizeRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { defaultClaudeModel, draftCoverLetter, generateDocument, listClaudeModels } from '../lib/ai.js';
+import {
+  AI_EFFORTS, DEFAULT_AI_EFFORT, defaultClaudeModel, draftCoverLetter, generateDocument,
+  listClaudeModels, normaliseEffort,
+} from '../lib/ai.js';
 import { buildFileKey, deleteFile, readFileBuffer, saveFile, tryReadFileText } from '../lib/storage.js';
 import { env } from '../config/env.js';
 import { resolveClaudeModel } from '../lib/aiAccess.js';
@@ -225,6 +228,24 @@ export function normalizeSavedMessages(raw) {
       role: message.role,
       content,
       ...(typeof message.note === 'string' && message.note ? { note: message.note.slice(0, 2_000) } : {}),
+      // The reasoning summary and the pages Claude opened, kept so a restored
+      // chat looks the same as it did when it was generated. Display only — a
+      // thinking block belongs to the response that produced it and is never
+      // replayed as one, so this is plain text about the reply, not context.
+      // Capped tightly and on purpose: unlike `content` this is not counted
+      // against MAX_SAVED_AI_CHARS, so an uncapped summary on every one of 60
+      // turns would quietly grow the stored row well past its intended ceiling.
+      ...(typeof message.thinking === 'string' && message.thinking
+        ? { thinking: message.thinking.slice(0, 6_000) } : {}),
+      ...(Array.isArray(message.sources) && message.sources.length ? {
+        sources: message.sources
+          .filter((source) => source && typeof source.url === 'string')
+          .slice(0, 12)
+          .map((source) => ({
+            url: source.url.slice(0, 500),
+            title: String(source.title || source.url).slice(0, 200),
+          })),
+      } : {}),
       ...(Array.isArray(message.files) ? {
         files: message.files.filter((name) => typeof name === 'string').slice(0, 6).map((name) => name.slice(0, 255)),
       } : {}),
@@ -248,6 +269,7 @@ function conversationPayload(conversation, savedMasterPrompt = '') {
     id: conversation.id,
     kind,
     model: conversation.model || '',
+    effort: conversation.effort || DEFAULT_AI_EFFORT,
     // What the NEXT turn will actually do, not merely what was snapshotted.
     // A chat with no snapshot yet (started before this feature existed) still
     // picks up the saved prompt, and a freeform chat runs none whatever the
@@ -275,6 +297,17 @@ async function selectedModel(req, requested) {
     requestedModel: requested,
     defaultModel: await defaultClaudeModel(),
   });
+}
+
+/**
+ * How hard Claude thinks before answering.
+ *
+ * An admin control, like the model picker: thinking tokens are billed, so a
+ * specialist cannot raise the cost of the platform on their own. Employees run
+ * at the platform default, which is already the API's own default.
+ */
+function selectedEffort(req, requested) {
+  return req.user.role === 'admin' ? normaliseEffort(requested) : DEFAULT_AI_EFFORT;
 }
 
 /** Saved AI Studio tabs are private to the signed-in admin/employee. */
@@ -325,6 +358,9 @@ router.get('/models', authenticate, authorizeRole(['admin', 'employee']), async 
         models: [{ id: effectiveModel, name: effectiveModel }],
         selectedModel: effectiveModel,
         canChoose: false,
+        efforts: AI_EFFORTS,
+        selectedEffort: DEFAULT_AI_EFFORT,
+        canChooseEffort: false,
         configured: Boolean(env.anthropicApiKey),
         masterPromptReady,
       });
@@ -332,6 +368,7 @@ router.get('/models', authenticate, authorizeRole(['admin', 'employee']), async 
     const models = await listClaudeModels();
     res.json({
       models, selectedModel: effectiveModel, canChoose: true,
+      efforts: AI_EFFORTS, selectedEffort: DEFAULT_AI_EFFORT, canChooseEffort: true,
       configured: Boolean(env.anthropicApiKey), masterPromptReady,
     });
   } catch (err) {
@@ -409,6 +446,7 @@ router.post(
         // Prior turns, JSON-encoded (multipart carries strings only).
         history: z.string().max(MAX_AI_HISTORY_JSON_CHARS).optional().or(z.literal('')),
         model: z.string().regex(/^claude-[a-zA-Z0-9._-]+$/).max(200).optional().or(z.literal('')),
+        effort: z.enum(AI_EFFORTS).optional().or(z.literal('')),
         conversationId: z.string().uuid().optional().or(z.literal('')),
       });
       const parsed = schema.safeParse(req.body);
@@ -444,6 +482,11 @@ router.post(
         ? (savedConversation?.systemPrompt || await getMasterPrompt())
         : '';
 
+      // Falls back to what this chat already ran at, so a restored conversation
+      // (or a browser on the previous build, which sends no effort at all) keeps
+      // its own setting instead of silently dropping back to the default.
+      const effort = selectedEffort(req, parsed.data.effort || savedConversation?.effort || undefined);
+
       // Keep only well-formed turns, and only the recent ones so the prompt
       // cannot grow without bound over a long conversation.
       let history = [];
@@ -476,6 +519,7 @@ router.post(
         attachments: extracted.attachments,
         history,
         model,
+        effort,
       });
 
       // Keep a copy of every reference so later turns in this chat still have the
@@ -519,11 +563,23 @@ router.post(
       if (degradedRefs.length) {
         noteParts.push(`${degradedRefs.join(', ')} could no longer be included — this chat has too many attached files. Start a new chat, or re-upload what is still needed.`);
       }
+      // A web search that fails comes back as a normal 200, so without this the
+      // reply would simply be ungrounded with nothing to show for it.
+      if (result.searchErrorCode) {
+        noteParts.push(result.searchErrorCode === 'max_uses_exceeded'
+          ? 'This answer used all the web searches allowed for one turn — ask a follow-up if anything is missing.'
+          : `Web search was unavailable for this answer (${result.searchErrorCode}), so it is based on Claude's own knowledge.`);
+      }
+      if (result.truncated) {
+        noteParts.push('This reply hit the length limit and stops mid-document — ask Claude to continue it.');
+      }
       const note = noteParts.join(' ') || undefined;
 
       const assistantMessage = {
         id: crypto.randomUUID(), role: 'assistant', content: result.draft,
         ...(note ? { note } : {}),
+        ...(result.thinking ? { thinking: result.thinking } : {}),
+        ...(result.sources?.length ? { sources: result.sources } : {}),
       };
       const previousMessages = savedConversation ? normalizeSavedMessages(savedConversation.messages) : [];
       const messages = normalizeSavedMessages([...previousMessages, userMessage, assistantMessage]);
@@ -540,13 +596,15 @@ router.post(
         ? await prisma.aiStudioConversation.update({
             where: { id: savedConversation.id },
             data: {
-              kind, model, messages,
+              kind, model, effort, messages,
               // Record the snapshot the first time this chat actually uses one.
               ...(masterPrompt && !savedConversation.systemPrompt ? { systemPrompt: masterPrompt } : {}),
             },
           })
         : await prisma.aiStudioConversation.create({
-            data: { userId: req.user.id, kind, model, messages, systemPrompt: masterPrompt || null },
+            data: {
+              userId: req.user.id, kind, model, effort, messages, systemPrompt: masterPrompt || null,
+            },
           });
       // Delete only what the PERSISTED record no longer mentions. Deriving this
       // from the row we just wrote — rather than from what we intended to write —
@@ -569,6 +627,9 @@ router.post(
         model: result.model,
         conversationId: saved.id,
         hasMasterPrompt: Boolean(masterPrompt),
+        effort,
+        thinking: result.thinking || '',
+        sources: result.sources || [],
         messages: publicMessages(messages),
         usedFiles: extracted.usedFiles.filter((name) => !skipped.includes(name)),
         skippedFiles: skipped,
